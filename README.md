@@ -179,7 +179,7 @@ An example is in Usage
 
 ## How to use for sorting
 
-simple use the streamline_event_times(...) method of TimelineOMat without any timelines as key function. By using the TimelineOMat parameter can be preinitialized
+simple use the streamline_event_times(...) method of TimelineOMat without any timelines as key function. By using the TimelineOMat class parameters can be preinitialized
 
 The resulting tuple can be sorted
 
