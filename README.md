@@ -131,8 +131,6 @@ timeline.append(Event(**tm.streamline_event_times(new_event2, timeline, stop_ext
 ```
 
 
-
-
 ## Tricks to improve the performance:
 
 ### Using TimelineOMat
@@ -165,7 +163,6 @@ new_event = Event(start=dt(2024, 1, 1), stop=dt(2024, 1, 4))
 # here we generate the setters and extractors only onetime
 tm = TimelineOMat()
 tm.streamline_event_times(new_event, ordered_timeline[-1:])
-#
 
 ```
 
@@ -183,13 +180,14 @@ simple use the streamline_event_times(...) method of TimelineOMat without any ti
 
 The resulting tuple can be sorted
 
-
 ``` python
 
 tm = TimelineOMat()
 timeline.sort(key=tm.streamline_event_times)
 
 ```
+
+Another usage of the key function would be together with heapq to implement some kind of merge sort
 
 ## Changes
 
