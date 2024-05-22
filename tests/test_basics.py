@@ -195,7 +195,7 @@ def test_result():
     timeline = [Event1(start=dt(2024, 1, 1), stop=dt(2024, 1, 2)), Event1(start=dt(2024, 1, 2), stop=dt(2024, 1, 3))]
     new_event = Event1(start=dt(2024, 1, 1), stop=dt(2024, 1, 4))
     # one time methods
-    assert timelineomat.streamline_event_times(new_event, timeline) == timelineomat.NewTimesResult(
+    assert timelineomat.streamline_event_times(new_event, timeline) == timelineomat.TimeRangeTuple(
         start=dt(2024, 1, 3), stop=dt(2024, 1, 4)
     )
 
@@ -206,7 +206,7 @@ def test_result_fallback_utc():
     # one time methods
     assert timelineomat.streamline_event_times(
         new_event, timeline, fallback_timezone=timezone.utc
-    ) == timelineomat.NewTimesResult(
+    ) == timelineomat.TimeRangeTuple(
         start=dt(2024, 1, 3, tzinfo=timezone.utc), stop=dt(2024, 1, 4, tzinfo=timezone.utc)
     )
 
@@ -232,3 +232,9 @@ def test_onetime_overwrite():
     )
     assert timeline[-1].stop == dt(2024, 1, 5)
     assert timeline[-1].start == dt(2024, 1, 4)
+    assert tm.transform_events_to_times(timeline) == [
+        timelineomat.TimeRangeTuple(start=dt(2024, 1, 1), stop=dt(2024, 1, 2)),
+        timelineomat.TimeRangeTuple(start=dt(2024, 1, 2), stop=dt(2024, 1, 3)),
+        timelineomat.TimeRangeTuple(start=dt(2024, 1, 3), stop=dt(2024, 1, 4)),
+        timelineomat.TimeRangeTuple(start=dt(2024, 1, 4), stop=dt(2024, 1, 5)),
+    ]

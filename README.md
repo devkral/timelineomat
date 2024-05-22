@@ -12,12 +12,17 @@ pip install timelineomat
 
 ## Usage
 
-see Code
+There are 3 different functions which also exist as methods of the TimelineOMat class
+
+- streamline_event_times: checks how to short the given event to fit into the timelines
+- streamline_event: uses streamline_event_times plus setters to update the event and returns event
+- transform_events_to_times: transforms timelines to TimeRangeTuple for e.g. databases
+
 
 ``` python
 from dataclasses import dataclass
 from datetime import datetime as dt
-from timelineomat import TimelineOMat, streamline_event_times, stream_line_event, NewTimesResult
+from timelineomat import TimelineOMat, streamline_event_times, stream_line_event, TimeRangeTuple
 
 
 @dataclass
@@ -29,13 +34,22 @@ timeline = [Event(start=dt(2024, 1, 1), stop=dt(2024, 1, 2)), Event(start=dt(202
 new_event = Event(start=dt(2024, 1, 1), stop=dt(2024, 1, 4))
 # one time methods
 # get intermediate result of new times
-streamline_event_times(new_event, timeline) == NewTimesResult(start=dt(2024, 1, 3), stop=dt(2024, 1, 4))
+streamline_event_times(new_event, timeline) == TimeRangeTuple(start=dt(2024, 1, 3), stop=dt(2024, 1, 4))
 # update the event
 timeline.append(streamline_event(new_event, timeline))
 
 tm = TimelineOMat()
 # use method instead
-tm.streamline_event_times(Event(start=dt(2024, 1, 1), stop=dt(2024, 1, )), timeline) == NewTimesResult(start=dt(2024, 1, 4), stop=dt(2024, 1, 5))
+tm.streamline_event_times(Event(start=dt(2024, 1, 1), stop=dt(2024, 1, )), timeline) == TimeRangeTuple(start=dt(2024, 1, 4), stop=dt(2024, 1, 5))
+
+# now integrate in django or whatever
+from django.db.models import Q
+
+q = Q()
+# this is not optimized
+for timetuple in tm.transform_events_to_times(timeline):
+    # timetuple is actually a 2 element tuple
+    q |= Q(timepoint__range=timetuple)
 
 ```
 
@@ -90,6 +104,7 @@ timeline = [Event(start=dt(2024, 1, 1), stop=dt(2024, 1, 2)), Event(start=dt(202
 new_event1 = Event(start=dt(2024, 1, 1), stop=dt(2024, 1, 4))
 new_event2 = dict(start=dt(2024, 1, 1), end=dt(2024, 1, 5))
 
+tm = TimelineOMat()
 ```
 
 it is possible to extract the data with
@@ -103,7 +118,6 @@ def one_time_overwrite_end(ev):
     else:
         return ev.stop
 
-tm = TimelineOMat()
 timeline.append(tm.streamline_event(new_event1, timeline))
 #
 
@@ -145,3 +159,15 @@ tm.streamline_event_times(new_event, ordered_timeline[-1:])
 #
 
 ```
+
+
+## How to integrate in db systems
+
+DB Systems like django support range queries, which receives two element tuples. TimelineOMat can convert the timelines into such tuples (TimeRangeTuple doubles as tuple)
+
+An example is in Usage
+
+
+## Changes
+
+0.3.0 rename NewTimesResult to TimeRangeTuple (the old name is still available)
