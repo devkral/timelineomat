@@ -168,6 +168,20 @@ DB Systems like django support range queries, which receives two element tuples.
 An example is in Usage
 
 
+## How to use for sorting
+
+simple use the streamline_event_times(...) method of TimelineOMat without any timelines as key function. By using the TimelineOMat parameter can be preinitialized
+
+The resulting tuple can be sorted
+
+
+``` python
+
+tm = TimelineOMat()
+timeline.sort(key=tm.streamline_event_times)
+
+```
+
 ## Changes
 
 0.3.0 rename NewTimesResult to TimeRangeTuple (the old name is still available)

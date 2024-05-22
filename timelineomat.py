@@ -99,24 +99,25 @@ def streamline_event_times(
     stop = handle_result(stop_extractor(event), fallback_timezone=fallback_timezone)
     if stop <= start:
         raise SkipEvent
-    for ev in chain.from_iterable(timelines):
-        if filter_fn and not filter_fn(ev):
-            continue
-        try:
-            ev_start = handle_result(start_extractor(ev), fallback_timezone=fallback_timezone)
-            ev_stop = handle_result(stop_extractor(ev), fallback_timezone=fallback_timezone)
-        except SkipEvent:
-            continue
-        if ev_stop <= ev_start:
-            continue
-        if ev_start <= start and ev_stop >= stop:
-            raise SkipEvent
-        if ev_start <= start and ev_stop > start:
-            start = ev_stop
-        if ev_start < stop and ev_stop >= stop:
-            stop = ev_start
-        if stop <= start:
-            raise SkipEvent
+    if timelines:
+        for ev in chain.from_iterable(timelines):
+            if filter_fn and not filter_fn(ev):
+                continue
+            try:
+                ev_start = handle_result(start_extractor(ev), fallback_timezone=fallback_timezone)
+                ev_stop = handle_result(stop_extractor(ev), fallback_timezone=fallback_timezone)
+            except SkipEvent:
+                continue
+            if ev_stop <= ev_start:
+                continue
+            if ev_start <= start and ev_stop >= stop:
+                raise SkipEvent
+            if ev_start <= start and ev_stop > start:
+                start = ev_stop
+            if ev_start < stop and ev_stop >= stop:
+                stop = ev_start
+            if stop <= start:
+                raise SkipEvent
     return TimeRangeTuple(start=start, stop=stop)
 
 
@@ -129,6 +130,8 @@ def streamline_event(
     stop_setter: Optional[Setter] = None,
     **kwargs,
 ) -> Any:
+    if not timelines:
+        return event
     if start_setter is not None:
         start_setter = create_setter(start_setter)
     else:
@@ -160,6 +163,8 @@ def transform_events_to_times(
     start_extractor = create_extractor(start_extractor)
     stop_extractor = create_extractor(stop_extractor)
     transformed = []
+    if not timelines:
+        return transformed
     for ev in chain.from_iterable(timelines):
         if filter_fn and not filter_fn(ev):
             continue
@@ -198,16 +203,27 @@ class TimelineOMat:
             self.stop_setter = create_setter(stop_extractor, disallow_call=True)
 
     def streamline_event_times(self, event: Any, *timelines, **kwargs) -> TimeRangeTuple:
-        return streamline_event_times(
-            event,
-            chain.from_iterable(timelines),
-            start_extractor=kwargs.get("start_extractor", self.start_extractor),
-            stop_extractor=kwargs.get("stop_extractor", self.stop_extractor),
-            filter_fn=kwargs.get("filter_fn", self.filter_fn),
-            fallback_timezone=kwargs.get("fallback_timezone", self.fallback_timezone),
-        )
+        if timelines:
+            return streamline_event_times(
+                event,
+                chain.from_iterable(timelines),
+                start_extractor=kwargs.get("start_extractor", self.start_extractor),
+                stop_extractor=kwargs.get("stop_extractor", self.stop_extractor),
+                filter_fn=kwargs.get("filter_fn", self.filter_fn),
+                fallback_timezone=kwargs.get("fallback_timezone", self.fallback_timezone),
+            )
+        else:
+            return streamline_event_times(
+                event,
+                start_extractor=kwargs.get("start_extractor", self.start_extractor),
+                stop_extractor=kwargs.get("stop_extractor", self.stop_extractor),
+                filter_fn=kwargs.get("filter_fn", self.filter_fn),
+                fallback_timezone=kwargs.get("fallback_timezone", self.fallback_timezone),
+            )
 
-    def streamline_event(self, event: Any, *timelines, **kwargs) -> None:
+    def streamline_event(self, event: Any, *timelines, **kwargs) -> Any:
+        if not timelines:
+            return event
         return streamline_event(
             event,
             chain.from_iterable(timelines),
@@ -220,6 +236,8 @@ class TimelineOMat:
         )
 
     def transform_events_to_times(self, *timelines, **kwargs) -> list[TimeRangeTuple]:
+        if not timelines:
+            return []
         return transform_events_to_times(
             chain.from_iterable(timelines),
             start_extractor=kwargs.get("start_extractor", self.start_extractor),
