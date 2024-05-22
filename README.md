@@ -14,7 +14,7 @@ pip install timelineomat
 
 There are 3 different functions which also exist as methods of the TimelineOMat class
 
-- streamline_event_times: checks how to short the given event to fit into the timelines
+- streamline_event_times: checks how to short the given event to fit into the timelines. Without a timeline the result can be used for sorting (see section later)
 - streamline_event: uses streamline_event_times plus setters to update the event and returns event
 - transform_events_to_times: transforms timelines to TimeRangeTuple for e.g. databases
 
