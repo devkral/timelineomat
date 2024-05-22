@@ -101,7 +101,9 @@ def streamline_event_times(
     stop = handle_result(
         stop_extractor(event), fallback_timezone=fallback_timezone
     )
-    for ev in chain(timelines):
+    if stop <= start:
+        raise SkipEvent
+    for ev in chain.from_iterable(timelines):
         if filter_fn and not filter_fn(ev):
             continue
         try:
@@ -115,11 +117,11 @@ def streamline_event_times(
             continue
         if ev_stop <= ev_start:
             continue
-        if ev_start < start and ev_stop > start:
-            if ev_stop > stop:
-                raise SkipEvent
+        if ev_start <= start and ev_stop >= stop:
+            raise SkipEvent
+        if ev_start <= start and ev_stop > start:
             start = ev_stop
-        if ev_start < stop and ev_stop > stop:
+        if ev_start < stop and ev_stop >= stop:
             stop = ev_start
         if stop <= start:
             raise SkipEvent
@@ -147,7 +149,7 @@ def streamline_event(
         stop_setter = create_setter(stop_extractor, disallow_call_instant=True)
     result = streamline_event_times(
         event,
-        chain(timelines),
+        chain.from_iterable(timelines),
         start_extractor=start_extractor,
         stop_extractor=stop_extractor,
         **kwargs,
@@ -188,7 +190,7 @@ class TimelineOMat:
     ) -> EventResult:
         return streamline_event_times(
             event,
-            chain(timelines),
+            chain.from_iterable(timelines),
             start_extractor=self.start_extractor,
             stop_extractor=self.stop_extractor,
             filter_fn=self.filter_fn,
@@ -198,7 +200,7 @@ class TimelineOMat:
     def streamline_event(self, event: Any, *timelines, **kwargs) -> None:
         result = self.streamline_event_times(
             event,
-            chain(timelines),
+            chain.from_iterable(timelines),
         )
         self.start_setter(event, result.start)
         self.stop_setter(event, result.stop)

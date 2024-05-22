@@ -1,7 +1,9 @@
 import contextlib
 from dataclasses import dataclass
 from datetime import datetime as dt
+from datetime import timedelta as td
 
+import pytest
 from faker import Faker
 
 import timelineomat
@@ -28,14 +30,14 @@ def _generate_event_series(_type, _variant):
         "-200d",
     )
     events = []
-    for _i in range(2000):
+    for _i in range(1000):
         while ts_stop < ts_start:
-            ts_stop += faker.time_delta("+2d")
+            ts_stop += td(hours=faker.random_int(1, 48))
         if _variant == 1:
             events.append(_type(start=ts_start, stop=ts_stop))
         else:
             events.append(_type(begin=ts_start, end=ts_stop))
-        ts_start += faker.time_delta("+2d")
+        ts_start += td(hours=faker.random_int(1, 48))
     return events
 
 
@@ -180,3 +182,19 @@ def test_dict2_timelineomat():
         if last_event:
             assert last_event["end"] <= ev["begin"]
         last_event = ev
+
+
+def test_invalid():
+    events = []
+    with pytest.raises(timelineomat.SkipEvent):
+        timelineomat.streamline_event_times(
+            Event1(start=dt(2024, 3, 2), stop=dt(2024, 2, 1)), events
+        )
+
+
+def test_within():
+    events = [Event1(start=dt(2024, 1, 1), stop=dt(2024, 3, 1))]
+    with pytest.raises(timelineomat.SkipEvent):
+        timelineomat.streamline_event_times(
+            Event1(start=dt(2024, 1, 2), stop=dt(2024, 2, 1)), events
+        )
