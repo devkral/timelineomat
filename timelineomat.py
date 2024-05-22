@@ -5,11 +5,11 @@ __all__ = [
     "SkipEvent",
 ]
 
-from itertools import chain
-from typing import Any, Union, Optional
 from collections.abc import Callable
-from datetime import datetime as dt, timezone as tz
-from collections import namedtuple
+from datetime import datetime as dt
+from datetime import timezone as tz
+from itertools import chain
+from typing import Any, NamedTuple, Optional, Union
 
 ExtractionResult = Union[dt, float, int]
 CallableExtractor = Callable[[Any], ExtractionResult]
@@ -18,15 +18,17 @@ CallableSetter = Callable[[Any, dt], None]
 Setter = Union[str, CallableSetter]
 
 
-class SkipEvent(Exception):
+class SkipEvent(BaseException):
     pass
 
 
-class NoCallAllowed(Exception):
+class NoCallAllowed(BaseException):
     pass
 
 
-EventResult = namedtuple("EventResult", ("start", "stop"))
+class EventResult(NamedTuple):
+    start: dt
+    stop: dt
 
 
 def create_extractor(extractor: Extractor) -> CallableExtractor:
@@ -37,24 +39,26 @@ def create_extractor(extractor: Extractor) -> CallableExtractor:
         try:
             if isinstance(event, dict):
                 return event[extractor]
-            else:
-                return getattr(event, extractor)
+            return getattr(event, extractor)
         except (KeyError, AttributeError):
-            raise SkipEvent()
+            raise SkipEvent from None
 
     return _extractor
 
 
 def create_setter(
-    setter: Setter, disallow_call=False, disallow_call_instant=False
+    setter: Setter,
+    *,
+    disallow_call: bool = False,
+    disallow_call_instant: bool = False,
 ) -> CallableSetter:
     if not isinstance(setter, str):
         if disallow_call_instant:
-            raise NoCallAllowed()
+            raise NoCallAllowed
         if disallow_call:
 
-            def _setter(event: Any, value: dt) -> ExtractionResult:
-                raise NoCallAllowed()
+            def _setter(event: Any, value: dt) -> ExtractionResult:  # noqa: RET505
+                raise NoCallAllowed
 
             return _setter
         return setter
@@ -63,7 +67,7 @@ def create_setter(
         if isinstance(event, dict):
             event[setter] = value
         else:
-            return setattr(event, setter, value)
+            setattr(event, setter, value)
 
     return _setter
 
@@ -75,10 +79,10 @@ def handle_result(
         if fallback_timezone and not result.tzinfo:
             result = result.replace(tzinfo=fallback_timezone)
         return result
-    elif isinstance(result, (int, float)):
+    elif isinstance(result, (int, float)):  # type: ignore
         return dt.fromtimestamp(result, fallback_timezone)
     else:
-        raise ValueError("not supported type: %s" % type(result))
+        raise TypeError(f"not supported type: {type(result)}")
 
 
 def streamline_event_times(
@@ -113,12 +117,12 @@ def streamline_event_times(
             continue
         if ev_start < start and ev_stop > start:
             if ev_stop > stop:
-                raise SkipEvent()
+                raise SkipEvent
             start = ev_stop
         if ev_start < stop and ev_stop > stop:
             stop = ev_start
         if stop <= start:
-            raise SkipEvent()
+            raise SkipEvent
     return EventResult(start=start, stop=stop)
 
 

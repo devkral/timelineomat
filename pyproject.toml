@@ -14,13 +14,30 @@ build-backend = "hatchling.build"
 
 [tool.ruff]
 line-length = 80
+target-version = "py39"
 
-[tool.hatch.envs.default]
-dependencies = ["ruff", "twine"]
+[tool.ruff.lint]
+select = [
+    # pycodestyle
+    "E",
+    # Pyflakes
+    "F",
+    # pyupgrade
+    "UP",
+    # flake8-bugbear
+    "B",
+    # flake8-simplify
+    "SIM",
+    # isort
+    "I",
+]
 
-
-[tool.hatch.envs.test]
-dependencies = ["faker", "pytest", "timelineomat"]
+ignore= ["FA100"]
 
 [tool.hatch.envs.hatch-test]
-template = "test"
+dependencies = ["faker", "pytest"]
+installer = "pip"
+
+[tool.hatch.envs.hatch-static-analysis]
+dependencies = ["ruff"]
+installer = "pip"
