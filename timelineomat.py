@@ -1,9 +1,4 @@
-__all__ = [
-    "streamline_event_times",
-    "streamline_event",
-    "TimelineOMat",
-    "SkipEvent",
-]
+__all__ = ["streamline_event_times", "streamline_event", "TimelineOMat", "SkipEvent", "NewTimesResult"]
 
 from collections.abc import Callable
 from datetime import datetime as dt
@@ -11,7 +6,7 @@ from datetime import timezone as tz
 from itertools import chain
 from typing import Any, NamedTuple, Optional, Union
 
-ExtractionResult = Union[dt, float, int]
+ExtractionResult = Union[dt, float, int, str]
 CallableExtractor = Callable[[Any], ExtractionResult]
 Extractor = Union[str, CallableExtractor]
 CallableSetter = Callable[[Any, dt], None]
@@ -26,7 +21,7 @@ class NoCallAllowed(BaseException):
     pass
 
 
-class EventResult(NamedTuple):
+class NewTimesResult(NamedTuple):
     start: dt
     stop: dt
 
@@ -72,15 +67,15 @@ def create_setter(
     return _setter
 
 
-def handle_result(
-    result: ExtractionResult, fallback_timezone: Optional[tz] = None
-) -> Optional[dt]:
+def handle_result(result: ExtractionResult, fallback_timezone: Optional[tz] = None) -> Optional[dt]:
     if isinstance(result, dt):
         if fallback_timezone and not result.tzinfo:
             result = result.replace(tzinfo=fallback_timezone)
         return result
-    elif isinstance(result, (int, float)):  # type: ignore
+    elif isinstance(result, (int, float)):
         return dt.fromtimestamp(result, fallback_timezone)
+    elif isinstance(result, str):  # type: ignore
+        return handle_result(dt.fromisoformat(result), fallback_timezone=fallback_timezone)
     else:
         raise TypeError(f"not supported type: {type(result)}")
 
@@ -92,27 +87,19 @@ def streamline_event_times(
     stop_extractor: Extractor = "stop",
     filter_fn: Optional[Callable[[Any], bool]] = None,
     fallback_timezone: Optional[tz] = None,
-) -> EventResult:
+) -> NewTimesResult:
     start_extractor = create_extractor(start_extractor)
     stop_extractor = create_extractor(stop_extractor)
-    start = handle_result(
-        start_extractor(event), fallback_timezone=fallback_timezone
-    )
-    stop = handle_result(
-        stop_extractor(event), fallback_timezone=fallback_timezone
-    )
+    start = handle_result(start_extractor(event), fallback_timezone=fallback_timezone)
+    stop = handle_result(stop_extractor(event), fallback_timezone=fallback_timezone)
     if stop <= start:
         raise SkipEvent
     for ev in chain.from_iterable(timelines):
         if filter_fn and not filter_fn(ev):
             continue
         try:
-            ev_start = handle_result(
-                start_extractor(ev), fallback_timezone=fallback_timezone
-            )
-            ev_stop = handle_result(
-                stop_extractor(ev), fallback_timezone=fallback_timezone
-            )
+            ev_start = handle_result(start_extractor(ev), fallback_timezone=fallback_timezone)
+            ev_stop = handle_result(stop_extractor(ev), fallback_timezone=fallback_timezone)
         except SkipEvent:
             continue
         if ev_stop <= ev_start:
@@ -125,7 +112,7 @@ def streamline_event_times(
             stop = ev_start
         if stop <= start:
             raise SkipEvent
-    return EventResult(start=start, stop=stop)
+    return NewTimesResult(start=start, stop=stop)
 
 
 def streamline_event(
@@ -136,13 +123,11 @@ def streamline_event(
     start_setter: Optional[Setter] = None,
     stop_setter: Optional[Setter] = None,
     **kwargs,
-) -> None:
+) -> Any:
     if start_setter is not None:
         start_setter = create_setter(start_setter)
     else:
-        start_setter = create_setter(
-            start_extractor, disallow_call_instant=True
-        )
+        start_setter = create_setter(start_extractor, disallow_call_instant=True)
     if stop_setter is not None:
         stop_setter = create_setter(stop_setter)
     else:
@@ -156,6 +141,7 @@ def streamline_event(
     )
     start_setter(event, result.start)
     stop_setter(event, result.stop)
+    return event
 
 
 class TimelineOMat:
@@ -175,32 +161,30 @@ class TimelineOMat:
         if start_setter is not None:
             self.start_setter = create_setter(start_setter)
         else:
-            self.start_setter = create_setter(
-                start_extractor, disallow_call=True
-            )
+            self.start_setter = create_setter(start_extractor, disallow_call=True)
         if stop_setter is not None:
             self.stop_setter = create_setter(stop_setter)
         else:
             self.stop_setter = create_setter(stop_extractor, disallow_call=True)
 
-    def streamline_event_times(
-        self,
-        event: Any,
-        *timelines,
-    ) -> EventResult:
+    def streamline_event_times(self, event: Any, *timelines, **kwargs) -> NewTimesResult:
         return streamline_event_times(
             event,
             chain.from_iterable(timelines),
-            start_extractor=self.start_extractor,
-            stop_extractor=self.stop_extractor,
-            filter_fn=self.filter_fn,
-            fallback_timezone=self.fallback_timezone,
+            start_extractor=kwargs.get("start_extractor", self.start_extractor),
+            stop_extractor=kwargs.get("stop_extractor", self.stop_extractor),
+            filter_fn=kwargs.get("filter_fn", self.filter_fn),
+            fallback_timezone=kwargs.get("fallback_timezone", self.fallback_timezone),
         )
 
     def streamline_event(self, event: Any, *timelines, **kwargs) -> None:
-        result = self.streamline_event_times(
+        return streamline_event(
             event,
             chain.from_iterable(timelines),
+            start_extractor=kwargs.get("start_extractor", self.start_extractor),
+            stop_extractor=kwargs.get("stop_extractor", self.stop_extractor),
+            filter_fn=kwargs.get("filter_fn", self.filter_fn),
+            fallback_timezone=kwargs.get("fallback_timezone", self.fallback_timezone),
+            start_setter=kwargs.get("start_setter", self.start_setter),
+            stop_setter=kwargs.get("stop_setter", self.stop_setter),
         )
-        self.start_setter(event, result.start)
-        self.stop_setter(event, result.stop)
