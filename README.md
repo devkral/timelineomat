@@ -30,7 +30,10 @@ class Event:
     start: dt
     stop: dt
 
-timeline = [Event(start=dt(2024, 1, 1), stop=dt(2024, 1, 2)), Event(start=dt(2024, 1, 2), stop=dt(2024, 1, 3))]
+timeline = [
+    Event(start=dt(2024, 1, 1), stop=dt(2024, 1, 2)),
+    Event(start=dt(2024, 1, 2), stop=dt(2024, 1, 3))
+]
 new_event = Event(start=dt(2024, 1, 1), stop=dt(2024, 1, 4))
 # one time methods
 # get intermediate result of new times
@@ -100,7 +103,10 @@ class Event:
     stop: dt
 
 
-timeline = [Event(start=dt(2024, 1, 1), stop=dt(2024, 1, 2)), Event(start=dt(2024, 1, 2), stop=dt(2024, 1, 3))]
+timeline = [
+    Event(start=dt(2024, 1, 1), stop=dt(2024, 1, 2)),
+    Event(start=dt(2024, 1, 2), stop=dt(2024, 1, 3))
+]
 new_event1 = Event(start=dt(2024, 1, 1), stop=dt(2024, 1, 4))
 new_event2 = dict(start=dt(2024, 1, 1), end=dt(2024, 1, 5))
 
@@ -151,7 +157,10 @@ class Event:
     start: dt
     stop: dt
 
-ordered_timeline = [Event(start=dt(2024, 1, 1), stop=dt(2024, 1, 2)), Event(start=dt(2024, 1, 2), stop=dt(2024, 1, 3))]
+ordered_timeline = [
+    Event(start=dt(2024, 1, 1), stop=dt(2024, 1, 2)),
+    Event(start=dt(2024, 1, 2), stop=dt(2024, 1, 3))
+]
 new_event = Event(start=dt(2024, 1, 1), stop=dt(2024, 1, 4))
 # here we generate the setters and extractors only onetime
 tm = TimelineOMat()
