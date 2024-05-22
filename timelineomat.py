@@ -1,4 +1,9 @@
-__all__ = ["streamline_event_times", "streamline_event", "TimelineOMat", "SkipEvent"]
+__all__ = [
+    "streamline_event_times",
+    "streamline_event",
+    "TimelineOMat",
+    "SkipEvent",
+]
 
 from itertools import chain
 from typing import Any, Union, Optional
@@ -86,8 +91,12 @@ def streamline_event_times(
 ) -> EventResult:
     start_extractor = create_extractor(start_extractor)
     stop_extractor = create_extractor(stop_extractor)
-    start = handle_result(start_extractor(event), fallback_timezone=fallback_timezone)
-    stop = handle_result(stop_extractor(event), fallback_timezone=fallback_timezone)
+    start = handle_result(
+        start_extractor(event), fallback_timezone=fallback_timezone
+    )
+    stop = handle_result(
+        stop_extractor(event), fallback_timezone=fallback_timezone
+    )
     for ev in chain(timelines):
         if filter_fn and not filter_fn(ev):
             continue
@@ -99,6 +108,8 @@ def streamline_event_times(
                 stop_extractor(ev), fallback_timezone=fallback_timezone
             )
         except SkipEvent:
+            continue
+        if ev_stop <= ev_start:
             continue
         if ev_start < start and ev_stop > start:
             if ev_stop > stop:
@@ -123,7 +134,9 @@ def streamline_event(
     if start_setter is not None:
         start_setter = create_setter(start_setter)
     else:
-        start_setter = create_setter(start_extractor, disallow_call_instant=True)
+        start_setter = create_setter(
+            start_extractor, disallow_call_instant=True
+        )
     if stop_setter is not None:
         stop_setter = create_setter(stop_setter)
     else:
@@ -156,7 +169,9 @@ class TimelineOMat:
         if start_setter is not None:
             self.start_setter = create_setter(start_setter)
         else:
-            self.start_setter = create_setter(start_extractor, disallow_call=True)
+            self.start_setter = create_setter(
+                start_extractor, disallow_call=True
+            )
         if stop_setter is not None:
             self.stop_setter = create_setter(stop_setter)
         else:
