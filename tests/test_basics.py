@@ -200,18 +200,22 @@ def test_result():
     new_event = Event1(start=dt(2024, 1, 1), stop=dt(2024, 1, 4))
     # one time methods
     occlusions = []
-    assert timelineomat.streamline_event_times(new_event, timeline, occlusions=occlusions) == timelineomat.TimeRangeTuple(
+    assert timelineomat.streamline_event_times(
+        new_event, timeline, occlusions=occlusions
+    ) == timelineomat.TimeRangeTuple(start=dt(2024, 1, 3), stop=dt(2024, 1, 4))
+    assert occlusions[0] == timelineomat.TimeRangeTuple(start=dt(2024, 1, 1), stop=dt(2024, 1, 3))
+    # TimelineOMat method
+    tm = timelineomat.TimelineOMat()
+    occlusions = []
+    assert tm.streamline_event_times(new_event, timeline, occlusions=occlusions) == timelineomat.TimeRangeTuple(
         start=dt(2024, 1, 3), stop=dt(2024, 1, 4)
-    )
-    assert occlusions[0] == timelineomat.TimeRangeTuple(
-        start=dt(2024, 1, 1), stop=dt(2024, 1, 3)
     )
 
 
 def test_result_fallback_utc():
     timeline = [Event1(start=dt(2024, 1, 1), stop=dt(2024, 1, 2)), Event1(start=dt(2024, 1, 2), stop=dt(2024, 1, 3))]
     new_event = Event1(start=dt(2024, 1, 1), stop=dt(2024, 1, 4))
-    # one time methods
+    # one time function
     assert timelineomat.streamline_event_times(
         new_event, timeline, fallback_timezone=timezone.utc
     ) == timelineomat.TimeRangeTuple(

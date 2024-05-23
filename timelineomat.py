@@ -225,6 +225,7 @@ def transform_events_to_times(
     fallback_timezone: Optional[tz] = None,
     **kwargs,
 ) -> list[TimeRangeTuple]:
+    assert "occlusions" not in kwargs, "occlusions not supported for this function"
     start_extractor = create_extractor(start_extractor)
     stop_extractor = create_extractor(stop_extractor)
     transformed = []
@@ -292,6 +293,7 @@ def ordered_insert(
     direction: Literal["asc", "desc"] = "asc",
     **kwargs,
 ) -> PositionOffsetTuple:
+    assert "occlusions" not in kwargs, "occlusions not supported for this function"
     position = _ordered_insert(event, timeline, direction=direction, **kwargs)
     if direction == "desc":
         return PositionOffsetTuple(position=position, offset=len(timeline) - position - 1)
@@ -369,6 +371,7 @@ class TimelineOMat:
         )
 
     def transform_events_to_times(self, *timelines, **kwargs) -> list[TimeRangeTuple]:
+        assert "occlusions" not in kwargs, "occlusions not supported for this function"
         if not timelines:
             return []
         return transform_events_to_times(
@@ -387,6 +390,7 @@ class TimelineOMat:
         offset: Offset = 0,
         **kwargs,
     ) -> PositionOffsetTuple:
+        assert "occlusions" not in kwargs, "occlusions not supported for this function"
         return ordered_insert(
             event,
             timeline,

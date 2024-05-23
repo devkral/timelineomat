@@ -251,5 +251,6 @@ Another usage of the key function would be together with heapq to implement some
 
 ## Changes
 
+0.5.0 add occlusions argument
 0.4.0 rename NoCallAllowed to NoCallAllowedError
 0.3.0 rename NewTimesResult to TimeRangeTuple (the old name is still available)
