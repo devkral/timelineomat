@@ -320,10 +320,7 @@ def test_ordered_insert_desc():
     position, offset = tm.ordered_insert(Event1(start=dt(2024, 1, 12), stop=dt(2024, 1, 13)), timeline)
     assert offset == 1
     assert position == 4
-    # should work also for stop
-    position, offset = tm.ordered_insert(
-        Event1(start=dt(2024, 1, 12), stop=dt(2024, 1, 13)), timeline, extractor="stop", offset=offset
-    )
+    position, offset = tm.ordered_insert(Event1(start=dt(2024, 1, 12), stop=dt(2024, 1, 13)), timeline, offset=offset)
     assert offset == 2
     position, offset = tm.ordered_insert(Event1(start=dt(2024, 1, 7), stop=dt(2024, 1, 8)), timeline, offset=offset)
     assert offset == 4
@@ -331,6 +328,35 @@ def test_ordered_insert_desc():
     assert position == 0
     # we are still descendend concerning the 2nd last insert and didn't updated the offset
     position = tm.ordered_insert(Event1(start=dt(2024, 1, 2), stop=dt(2024, 1, 3)), timeline, offset=offset).position
+    assert position == 2
+
+
+def test_streamlined_ordered_insert_desc():
+    # desc is more complicated
+    timeline = [
+        Event1(start=dt(2024, 1, 1), stop=dt(2024, 1, 2)),
+        # invalid event
+        {},
+        Event1(start=dt(2024, 1, 5), stop=dt(2024, 1, 6)),
+        Event1(start=dt(2024, 1, 10), stop=dt(2024, 1, 11)),
+        Event1(start=dt(2024, 1, 12), stop=dt(2024, 1, 13)),
+    ]
+    tm = timelineomat.TimelineOMat(direction="desc")
+    # we need to insert descending
+    with pytest.raises(timelineomat.SkipEvent):
+        tm.streamlined_ordered_insert(Event1(start=dt(2024, 1, 12), stop=dt(2024, 1, 13)), timeline)
+    position, offset = tm.streamlined_ordered_insert(Event1(start=dt(2024, 1, 7), stop=dt(2024, 1, 11)), timeline)
+    assert offset == 2
+    assert timeline[position].start == dt(2024, 1, 7)
+    assert timeline[position].stop == dt(2024, 1, 10)
+    position = tm.streamlined_ordered_insert(
+        Event1(start=dt(2023, 1, 12), stop=dt(2023, 1, 13)), timeline, offset=offset
+    ).position
+    assert position == 0
+    # we are still descendend concerning the 2nd last insert and didn't updated the offset
+    position = tm.streamlined_ordered_insert(
+        Event1(start=dt(2024, 1, 2), stop=dt(2024, 1, 3)), timeline, offset=offset
+    ).position
     assert position == 2
 
 

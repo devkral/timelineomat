@@ -11,7 +11,7 @@ __all__ = [
     "TimeRangeTuple",
 ]
 
-from collections.abc import Callable, Iterable, MutableSequence
+from collections.abc import Callable, Iterable, MutableSequence, Sequence
 from datetime import datetime as dt
 from datetime import timezone as tz
 from functools import lru_cache
@@ -132,6 +132,16 @@ def extract_tuple_from_event(
     return TimeRangeTuple(start=start, stop=stop)
 
 
+def _array_window(array: Sequence[Event], offset, direction: Literal["asc", "desc"]):
+    length = len(array)
+    if direction == "asc":
+        for pos in range(offset, length):
+            yield array[pos]
+    else:
+        for pos in range(offset, length):
+            yield array[length - pos - 1]
+
+
 def _streamline_event_times(
     event: Event,
     timeline: Iterable[Event],
@@ -250,6 +260,7 @@ def _ordered_insert(
     start_extractor: Extractor = "start",
     stop_extractor: Extractor = "stop",
     fallback_timezone: Optional[tz] = None,
+    **kwargs,
 ) -> Position:
     start_extractor = create_extractor(start_extractor)
     stop_extractor = create_extractor(stop_extractor)
@@ -298,6 +309,51 @@ def ordered_insert(
     if direction == "desc":
         return PositionOffsetTuple(position=position, offset=len(timeline) - position - 1)
     return PositionOffsetTuple(position=position, offset=position)
+
+
+def streamlined_ordered_insert(
+    event: Event,
+    timeline: MutableSequence[Event],
+    *,
+    filter_fn: Optional[FilterFunction] = None,
+    occlusions: Optional[list[TimeRangeTuple]] = None,
+    direction: Literal["asc", "desc"] = "asc",
+    start_extractor: Extractor = "start",
+    stop_extractor: Extractor = "stop",
+    start_setter: Optional[Setter] = None,
+    stop_setter: Optional[Setter] = None,
+    offset: int = 0,
+    **kwargs,
+) -> PositionOffsetTuple:
+    if start_setter is not None:
+        start_setter = create_setter(start_setter)
+    else:
+        start_setter = create_setter(start_extractor, disallow_call_instant=True)
+    if stop_setter is not None:
+        stop_setter = create_setter(stop_setter)
+    else:
+        stop_setter = create_setter(stop_extractor, disallow_call_instant=True)
+    # must be after setter extractors
+    start_extractor = create_extractor(start_extractor)
+    stop_extractor = create_extractor(stop_extractor)
+    return ordered_insert(
+        streamline_event(
+            event,
+            _array_window(timeline, offset, direction),
+            occlusions=occlusions,
+            start_extractor=start_extractor,
+            stop_extractor=stop_extractor,
+            start_setter=start_setter,
+            stop_setter=stop_setter,
+            **kwargs,
+        ),
+        timeline,
+        start_extractor=start_extractor,
+        stop_extractor=stop_extractor,
+        offset=offset,
+        direction=direction,
+        **kwargs,
+    )
 
 
 class TimelineOMat:
@@ -399,4 +455,26 @@ class TimelineOMat:
             stop_extractor=kwargs.get("stop_extractor", self.stop_extractor),
             direction=kwargs.get("direction", self.direction),
             fallback_timezone=kwargs.get("fallback_timezone", self.fallback_timezone),
+        )
+
+    def streamlined_ordered_insert(
+        self,
+        event: Event,
+        timeline: MutableSequence[Event],
+        *,
+        offset: Offset = 0,
+        **kwargs,
+    ) -> PositionOffsetTuple:
+        return streamlined_ordered_insert(
+            event,
+            timeline,
+            offset=offset,
+            start_extractor=kwargs.get("start_extractor", self.start_extractor),
+            stop_extractor=kwargs.get("stop_extractor", self.stop_extractor),
+            direction=kwargs.get("direction", self.direction),
+            fallback_timezone=kwargs.get("fallback_timezone", self.fallback_timezone),
+            filter_fn=kwargs.get("filter_fn", self.filter_fn),
+            start_setter=kwargs.get("start_setter", self.start_setter),
+            stop_setter=kwargs.get("stop_setter", self.stop_setter),
+            occlusions=kwargs.get("occlusions", None),
         )
