@@ -254,6 +254,7 @@ Another usage of the key function would be together with heapq to implement some
 
 ## Changes
 
+0.6.0 add streamlined_ordered_insert
 0.5.0 add occlusions argument
 0.4.0 rename NoCallAllowed to NoCallAllowedError
 0.3.0 rename NewTimesResult to TimeRangeTuple (the old name is still available)
