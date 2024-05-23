@@ -22,18 +22,18 @@ class Event2:
     end: dt
 
 
+def _generate_time_tuple(faker, start):
+    return start, start + td(hours=faker.random_int(1, 48))
+
+
 def _generate_event_series(_type, _variant):
     faker = Faker()
     ts_start = faker.past_datetime(
         "-200d",
     )
-    ts_stop = faker.past_datetime(
-        "-200d",
-    )
     events = []
     for _i in range(1000):
-        while ts_stop < ts_start:
-            ts_stop += td(hours=faker.random_int(1, 48))
+        ts_stop = _generate_time_tuple(faker, ts_start)[1]
         if _variant == 1:
             events.append(_type(start=ts_start, stop=ts_stop))
         else:
@@ -249,6 +249,78 @@ def test_onetime_overwrite():
     ]
 
 
+@pytest.mark.parametrize("direction", ["asc", "desc"])
+def test_ordered_insert_basic(direction):
+    timeline = [
+        Event1(start=dt(2024, 1, 1), stop=dt(2024, 1, 2)),
+        # invalid event
+        {},
+        Event1(start=dt(2024, 1, 5), stop=dt(2024, 1, 6)),
+        Event1(start=dt(2024, 1, 10), stop=dt(2024, 1, 11)),
+        Event1(start=dt(2024, 1, 12), stop=dt(2024, 1, 13)),
+    ]
+    tm = timelineomat.TimelineOMat(direction=direction)
+    position_offset = tm.ordered_insert(
+        Event1(start=dt(2024, 1, 2), stop=dt(2024, 1, 3)), timeline, direction=direction
+    )
+    # invalid element is skipped
+    if direction == "asc":
+        assert position_offset == (2, 2)
+        position_offset = position_offset.offset
+    else:
+        assert position_offset == (1, 4)
+        # unset it for desc, we add asc events
+        position_offset = 0
+    # test stability
+    position_offset = tm.ordered_insert(
+        Event1(start=dt(2024, 1, 2), stop=dt(2024, 1, 3)), timeline, offset=position_offset
+    )
+    if direction == "asc":
+        assert position_offset == (3, 3)
+        position_offset = position_offset.offset
+    else:
+        assert position_offset == (1, 5)
+        position_offset = 0
+    # overlapping
+    position_offset = tm.ordered_insert(
+        Event1(start=dt(2024, 1, 7), stop=dt(2024, 1, 12)), timeline, offset=position_offset
+    )
+    if direction == "asc":
+        assert position_offset == (5, 5)
+        position_offset = position_offset.offset
+    else:
+        assert position_offset == (5, 2)
+        position_offset = 0
+
+
+def test_ordered_insert_desc():
+    # desc is more complicated
+    timeline = [
+        Event1(start=dt(2024, 1, 1), stop=dt(2024, 1, 2)),
+        # invalid event
+        {},
+        Event1(start=dt(2024, 1, 5), stop=dt(2024, 1, 6)),
+        Event1(start=dt(2024, 1, 10), stop=dt(2024, 1, 11)),
+        Event1(start=dt(2024, 1, 12), stop=dt(2024, 1, 13)),
+    ]
+    tm = timelineomat.TimelineOMat(direction="desc")
+    # we need to insert descending
+    position, offset = tm.ordered_insert(Event1(start=dt(2024, 1, 12), stop=dt(2024, 1, 13)), timeline)
+    assert offset == 1
+    assert position == 4
+    # should work also for stop
+    position, offset = tm.ordered_insert(
+        Event1(start=dt(2024, 1, 12), stop=dt(2024, 1, 13)), timeline, extractor="stop", offset=offset
+    )
+    assert offset == 2
+    position, offset = tm.ordered_insert(Event1(start=dt(2024, 1, 7), stop=dt(2024, 1, 8)), timeline, offset=offset)
+    assert offset == 4
+    position = tm.ordered_insert(Event1(start=dt(2023, 1, 12), stop=dt(2023, 1, 13)), timeline, offset=offset).position
+    assert position == 0
+    # we are still descendend concerning the 2nd last insert and didn't updated the offset
+    position = tm.ordered_insert(Event1(start=dt(2024, 1, 2), stop=dt(2024, 1, 3)), timeline, offset=offset).position
+    assert position == 2
+
 
 def test_invalid_rejection():
     timeline = []
@@ -257,9 +329,13 @@ def test_invalid_rejection():
         timelineomat.streamline_event_times(new_event1, timeline)
     with pytest.raises(timelineomat.SkipEvent):
         timelineomat.streamline_event_times(new_event1)
+    with pytest.raises(timelineomat.SkipEvent):
+        timelineomat.ordered_insert(new_event1, timeline)
 
     tm = timelineomat.TimelineOMat()
     with pytest.raises(timelineomat.SkipEvent):
         tm.streamline_event_times(new_event1, timeline)
     with pytest.raises(timelineomat.SkipEvent):
         tm.streamline_event_times(new_event1)
+    with pytest.raises(timelineomat.SkipEvent):
+        tm.ordered_insert(new_event1, timeline)

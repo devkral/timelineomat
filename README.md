@@ -12,11 +12,18 @@ pip install timelineomat
 
 ## Usage
 
-There are 3 different functions which also exist as methods of the TimelineOMat class
+There are 4 different functions which also exist as methods of the TimelineOMat class
 
 - streamline_event_times: checks how to short the given event to fit into the timelines. Without a timeline the result can be used for sorting (see section later)
 - streamline_event: uses streamline_event_times plus setters to update the event and returns event
 - transform_events_to_times: transforms timelines to TimeRangeTuple for e.g. databases
+- ordered_insert: insert an event in a timeline so it stays ordered. By default an offset is returned. It can be used in case of ascending inserts to improve the performance
+
+ordered_insert also takes the parameters direction and offset (direction can be set on TimelineOMat). This allows performant inserts and collision checks.
+
+When ordered_insert is called with offset 0 or unset it is safe to call even when the insertion order is chaotic
+
+The timeline must be ordered anyway for ordered_insert
 
 
 ``` python
@@ -166,6 +173,48 @@ tm.streamline_event_times(new_event, ordered_timeline[-1:])
 
 ```
 
+In case the inserts are not completely ordered there is a helper named ordered_insert. It returns and takes (optionally) an offset. As soon as a break in the monotonic ascending or descending is detected, the offset can be set to 0.
+
+Note: position and offset are in ascending orders the same.
+
+
+``` python
+from dataclasses import dataclass
+from datetime import datetime as dt
+from timelineomat import TimelineOMat
+
+
+@dataclass
+class Event:
+    start: dt
+    stop: dt
+
+ordered_timeline = [
+    Event(start=dt(2024, 1, 1), stop=dt(2024, 1, 2)),
+    Event(start=dt(2024, 1, 2), stop=dt(2024, 1, 3))
+]
+new_event1 = Event(start=dt(2024, 1, 1), stop=dt(2024, 1, 4))
+new_event2 = Event(start=dt(2023, 1, 1), stop=dt(2023, 1, 4))
+new_event3 = Event(start=dt(2025, 1, 1), stop=dt(2025, 1, 4))
+new_event4 = Event(start=dt(2025, 2, 1), stop=dt(2025, 2, 4))
+# here we generate the setters and extractors only onetime
+tm = TimelineOMat(direction="desc")
+position, offset = tm.ordered_insert(
+    tm.streamline_event(
+        new_event1, ordered_timeline[:len(ordered_timeline)-1-offset]
+    ),
+    ordered_timeline
+)
+position, offset = tm.ordered_insert(tm.streamline_event(new_event2, ordered_timeline[-1:]), ordered_timeline, offset=offset)
+# is stable
+position = tm.ordered_insert(tm.streamline_event(new_event2, ordered_timeline[-1:]), ordered_timeline, offset=offset).position
+# here is a break in the monotic order and we get ascending inserts
+offset = 0
+position, offset = tm.ordered_insert(tm.streamline_event(new_event3, ordered_timeline), ordered_timeline, offset=offset, direction="asc")
+position, offset = tm.ordered_insert(tm.streamline_event(new_event4, ordered_timeline[-1:]), ordered_timeline, offset=offset, direction="asc")
+
+```
+
 
 ## How to integrate in db systems
 
@@ -187,8 +236,18 @@ timeline.sort(key=tm.streamline_event_times)
 
 ```
 
+To compare only the start or stop timestamps
+
+``` python
+
+tm = TimelineOMat()
+timeline.sort(key=tm.start_extractor)
+
+```
+
 Another usage of the key function would be together with heapq to implement some kind of merge sort
 
 ## Changes
 
+0.4.0 rename NoCallAllowed to NoCallAllowedError
 0.3.0 rename NewTimesResult to TimeRangeTuple (the old name is still available)
