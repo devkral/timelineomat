@@ -25,6 +25,8 @@ When ordered_insert is called with offset 0 or unset it is safe to call even whe
 
 The timeline must be ordered anyway for ordered_insert
 
+There is a new argument occlusions which must be of type list. It receives the 
+occluded time ranges
 
 ``` python
 from dataclasses import dataclass

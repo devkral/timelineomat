@@ -4,12 +4,14 @@ __all__ = [
     "ordered_insert",
     "TimelineOMat",
     "SkipEvent",
+    "SkipInvalidEvent",
+    "SkipOccludedEvent",
     "NoCallAllowedError",
     "PositionOffsetTuple",
     "TimeRangeTuple",
 ]
 
-from collections.abc import Callable, MutableSequence
+from collections.abc import Callable, Iterable, MutableSequence
 from datetime import datetime as dt
 from datetime import timezone as tz
 from functools import lru_cache
@@ -27,14 +29,6 @@ CallableSetter = Callable[[Event, dt], None]
 Setter = Union[str, CallableSetter]
 
 
-class SkipEvent(BaseException):
-    pass
-
-
-class NoCallAllowedError(Exception):
-    pass
-
-
 class TimeRangeTuple(NamedTuple):
     start: dt
     stop: dt
@@ -45,8 +39,29 @@ class PositionOffsetTuple(NamedTuple):
     offset: Offset
 
 
+class SkipEvent(BaseException):
+    pass
+
+
+class SkipInvalidEvent(SkipEvent):
+    pass
+
+
+class SkipOccludedEvent(SkipEvent):
+    original: TimeRangeTuple
+
+    def __init__(self, *args, original: TimeRangeTuple, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.original = original
+
+
+class NoCallAllowedError(Exception):
+    pass
+
+
 # old name
 NewTimesResult = TimeRangeTuple
+_empty = frozenset()
 
 
 def create_extractor(extractor: Extractor) -> CallableExtractor:
@@ -58,8 +73,8 @@ def create_extractor(extractor: Extractor) -> CallableExtractor:
             if isinstance(event, dict):
                 return event[extractor]
             return getattr(event, extractor)
-        except (KeyError, AttributeError):
-            raise SkipEvent from None
+        except (KeyError, AttributeError) as exc:
+            raise SkipInvalidEvent from exc
 
     return _extractor
 
@@ -113,36 +128,62 @@ def extract_tuple_from_event(
     start = handle_result(start_extractor(event), fallback_timezone=fallback_timezone)
     stop = handle_result(stop_extractor(event), fallback_timezone=fallback_timezone)
     if stop <= start:
-        raise SkipEvent
+        raise SkipInvalidEvent("duration <= 0")
     return TimeRangeTuple(start=start, stop=stop)
 
 
-def streamline_event_times(
+def _streamline_event_times(
     event: Event,
-    *timelines,
+    timeline: Iterable[Event],
     start_extractor: Extractor = "start",
     stop_extractor: Extractor = "stop",
     filter_fn: Optional[FilterFunction] = None,
     fallback_timezone: Optional[tz] = None,
     **kwargs,
-) -> TimeRangeTuple:
+) -> tuple[TimeRangeTuple, TimeRangeTuple]:
     start_extractor = create_extractor(start_extractor)
     stop_extractor = create_extractor(stop_extractor)
-    start, stop = extract_tuple_from_event(event, start_extractor, stop_extractor, fallback_timezone)
-    if timelines:
-        for ev in chain.from_iterable(timelines):
-            if filter_fn and not filter_fn(ev):
-                continue
+    start, stop = orig_tuple = extract_tuple_from_event(event, start_extractor, stop_extractor, fallback_timezone)
+    if not timeline:
+        return orig_tuple, orig_tuple
+    for ev in timeline:
+        if filter_fn and not filter_fn(ev):
+            continue
+        try:
             ev_start, ev_stop = extract_tuple_from_event(ev, start_extractor, stop_extractor, fallback_timezone)
-            if ev_start <= start and ev_stop >= stop:
-                raise SkipEvent
-            if ev_start <= start and ev_stop > start:
-                start = ev_stop
-            if ev_start < stop and ev_stop >= stop:
-                stop = ev_start
-            if stop <= start:
-                raise SkipEvent
-    return TimeRangeTuple(start=start, stop=stop)
+        except SkipEvent:
+            continue
+        if ev_start <= start and ev_stop >= stop:
+            raise SkipOccludedEvent(original=orig_tuple)
+        if ev_start <= start and ev_stop > start:
+            start = ev_stop
+        if ev_start < stop and ev_stop >= stop:
+            stop = ev_start
+        if stop <= start:
+            raise SkipOccludedEvent(original=orig_tuple)
+    return TimeRangeTuple(start=start, stop=stop), orig_tuple
+
+
+def streamline_event_times(
+    event: Event,
+    *timelines,
+    occlusions: Optional[list[TimeRangeTuple]] = None,
+    **kwargs,
+) -> TimeRangeTuple:
+    try:
+        new_tuple, orig_tuple = _streamline_event_times(
+            event, chain.from_iterable(timelines) if timelines else _empty, **kwargs
+        )
+    except SkipOccludedEvent as exc:
+        if occlusions is not None:
+            occlusions.append(exc.original)
+        raise exc
+    if new_tuple != orig_tuple and occlusions is not None:
+        if orig_tuple.start != new_tuple.start:
+            occlusions.append(TimeRangeTuple(start=orig_tuple.start, stop=new_tuple.start))
+        if orig_tuple.stop != new_tuple.stop:
+            occlusions.append(TimeRangeTuple(start=new_tuple.stop, stop=orig_tuple.stop))
+    return new_tuple
 
 
 def streamline_event(
@@ -164,15 +205,15 @@ def streamline_event(
         stop_setter = create_setter(stop_setter)
     else:
         stop_setter = create_setter(stop_extractor, disallow_call_instant=True)
-    result = streamline_event_times(
+    new_tuple = streamline_event_times(
         event,
         chain.from_iterable(timelines),
         start_extractor=start_extractor,
         stop_extractor=stop_extractor,
         **kwargs,
     )
-    start_setter(event, result.start)
-    stop_setter(event, result.stop)
+    start_setter(event, new_tuple.start)
+    stop_setter(event, new_tuple.stop)
     return event
 
 
@@ -300,6 +341,7 @@ class TimelineOMat:
                 stop_extractor=kwargs.get("stop_extractor", self.stop_extractor),
                 filter_fn=kwargs.get("filter_fn", self.filter_fn),
                 fallback_timezone=kwargs.get("fallback_timezone", self.fallback_timezone),
+                occlusions=kwargs.get("occlusions", None),
             )
         else:
             return streamline_event_times(
@@ -308,6 +350,7 @@ class TimelineOMat:
                 stop_extractor=kwargs.get("stop_extractor", self.stop_extractor),
                 filter_fn=kwargs.get("filter_fn", self.filter_fn),
                 fallback_timezone=kwargs.get("fallback_timezone", self.fallback_timezone),
+                occlusions=kwargs.get("occlusions", None),
             )
 
     def streamline_event(self, event: Event, *timelines, **kwargs) -> Event:
@@ -322,6 +365,7 @@ class TimelineOMat:
             fallback_timezone=kwargs.get("fallback_timezone", self.fallback_timezone),
             start_setter=kwargs.get("start_setter", self.start_setter),
             stop_setter=kwargs.get("stop_setter", self.stop_setter),
+            occlusions=kwargs.get("occlusions", None),
         )
 
     def transform_events_to_times(self, *timelines, **kwargs) -> list[TimeRangeTuple]:

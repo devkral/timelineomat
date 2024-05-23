@@ -187,16 +187,24 @@ def test_invalid():
 
 def test_event_within_event():
     events = [Event1(start=dt(2024, 1, 1), stop=dt(2024, 3, 1))]
+    new_event = Event1(start=dt(2024, 1, 2), stop=dt(2024, 2, 1))
+    occlusions = []
     with pytest.raises(timelineomat.SkipEvent):
-        timelineomat.streamline_event_times(Event1(start=dt(2024, 1, 2), stop=dt(2024, 2, 1)), events)
+        timelineomat.streamline_event_times(new_event, events, occlusions=occlusions)
+    assert new_event.start == occlusions[0].start
+    assert new_event.stop == occlusions[0].stop
 
 
 def test_result():
     timeline = [Event1(start=dt(2024, 1, 1), stop=dt(2024, 1, 2)), Event1(start=dt(2024, 1, 2), stop=dt(2024, 1, 3))]
     new_event = Event1(start=dt(2024, 1, 1), stop=dt(2024, 1, 4))
     # one time methods
-    assert timelineomat.streamline_event_times(new_event, timeline) == timelineomat.TimeRangeTuple(
+    occlusions = []
+    assert timelineomat.streamline_event_times(new_event, timeline, occlusions=occlusions) == timelineomat.TimeRangeTuple(
         start=dt(2024, 1, 3), stop=dt(2024, 1, 4)
+    )
+    assert occlusions[0] == timelineomat.TimeRangeTuple(
+        start=dt(2024, 1, 1), stop=dt(2024, 1, 3)
     )
 
 
