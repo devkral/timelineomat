@@ -234,21 +234,20 @@ def transform_events_to_times(
     filter_fn: Optional[FilterFunction] = None,
     fallback_timezone: Optional[tz] = None,
     **kwargs,
-) -> list[TimeRangeTuple]:
+) -> Iterable[tuple[TimeRangeTuple, Event]]:
     assert "occlusions" not in kwargs, "occlusions not supported for this function"
     start_extractor = create_extractor(start_extractor)
     stop_extractor = create_extractor(stop_extractor)
-    transformed = []
     if not timelines:
-        return transformed
+        return
     for ev in chain.from_iterable(timelines):
         if filter_fn and not filter_fn(ev):
             continue
         try:
-            transformed.append(extract_tuple_from_event(ev, start_extractor, stop_extractor, fallback_timezone))
+            retval = (extract_tuple_from_event(ev, start_extractor, stop_extractor, fallback_timezone), ev)
+            yield retval
         except SkipEvent:
             continue
-    return transformed
 
 
 def _ordered_insert(
@@ -426,7 +425,7 @@ class TimelineOMat:
             occlusions=kwargs.get("occlusions", None),
         )
 
-    def transform_events_to_times(self, *timelines, **kwargs) -> list[TimeRangeTuple]:
+    def transform_events_to_times(self, *timelines, **kwargs) -> Iterable[tuple[TimeRangeTuple, Event]]:
         assert "occlusions" not in kwargs, "occlusions not supported for this function"
         if not timelines:
             return []

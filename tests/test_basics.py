@@ -245,7 +245,7 @@ def test_onetime_overwrite():
     assert timeline[-1].stop == dt(2024, 1, 5)
     assert timeline[-1].start == dt(2024, 1, 4)
     # test conversion in TimeRangeTuple array
-    assert tm.transform_events_to_times(timeline) == [
+    assert [t for t, ev in tm.transform_events_to_times(timeline)] == [
         timelineomat.TimeRangeTuple(start=dt(2024, 1, 1), stop=dt(2024, 1, 2)),
         timelineomat.TimeRangeTuple(start=dt(2024, 1, 2), stop=dt(2024, 1, 3)),
         timelineomat.TimeRangeTuple(start=dt(2024, 1, 3), stop=dt(2024, 1, 4)),
@@ -253,7 +253,9 @@ def test_onetime_overwrite():
     ]
     # test sorting
 
-    assert tm.transform_events_to_times(sorted(timeline, key=tm.streamline_event_times, reverse=True)) == [
+    assert [
+        t for t, ev in tm.transform_events_to_times(sorted(timeline, key=tm.streamline_event_times, reverse=True))
+    ] == [
         timelineomat.TimeRangeTuple(start=dt(2024, 1, 4), stop=dt(2024, 1, 5)),
         timelineomat.TimeRangeTuple(start=dt(2024, 1, 3), stop=dt(2024, 1, 4)),
         timelineomat.TimeRangeTuple(start=dt(2024, 1, 2), stop=dt(2024, 1, 3)),

@@ -60,9 +60,9 @@ from django.db.models import Q
 
 q = Q()
 # this is not optimized
-for timetuple in tm.transform_events_to_times(timeline):
+for timetuple, ev in tm.transform_events_to_times(timeline):
     # timetuple is actually a 2 element tuple
-    q |= Q(timepoint__range=timetuple)
+    q |= Q(timepoint__range=timetuple) & ~Q(id=ev.id)
 
 ```
 
@@ -223,9 +223,13 @@ position, offset = tm.ordered_insert(tm.streamline_event(new_event4, ordered_tim
 
 ## How to integrate in db systems
 
-DB Systems like django support range queries, which receives two element tuples. TimelineOMat can convert the timelines into such tuples (TimeRangeTuple doubles as tuple)
+DB Systems like django support range queries, which receives two element tuples. TimelineOMat can convert the timelines into such tuples (TimeRangeTuple doubles as tuple) with transform_events_to_times.
+
+The result is an iterator which returns tuples of (TimeRangeTuple, Event)
 
 An example is in Usage
+
+Note: since 0.7.0 the Event from which the TimeRangeTuple is extracted is provided as second element
 
 
 ## How to use for sorting
@@ -254,6 +258,7 @@ Another usage of the key function would be together with heapq to implement some
 
 ## Changes
 
+0.7.0 Breaking Change: transform_events_to_times is now an iterator and returns the event as second element
 0.6.0 add streamlined_ordered_insert
 0.5.0 add occlusions argument
 0.4.0 rename NoCallAllowed to NoCallAllowedError
