@@ -13,7 +13,7 @@ jobs:
     runs-on: "ubuntu-latest"
     strategy:
       matrix:
-        python-version: ["3.8", "3.9", "3.10", "3.11", "3.12"]
+        python-version: ["3.9", "3.10", "3.11", "3.12"]
 
 
     steps:
@@ -22,7 +22,9 @@ jobs:
         with:
           python-version: "${{ matrix.python-version }}"
           allow-prereleases: true
-      - uses: yezz123/setup-uv@v4
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip uv hatch
       - name: "Run linting"
         run: "hatch fmt"
       - name: "Run tests"
