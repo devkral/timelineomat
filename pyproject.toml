@@ -54,10 +54,12 @@ select = [
 
 ignore= ["FA100"]
 
+[tool.hatch.envs.default]
+installer = "uv"
+
 [tool.hatch.envs.hatch-test]
 dependencies = ["faker", "pytest"]
-installer = "pip"
+installer = "uv"
 
 [tool.hatch.envs.hatch-static-analysis]
-dependencies = ["ruff"]
-installer = "pip"
+installer = "uv"

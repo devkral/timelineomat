@@ -256,6 +256,15 @@ timeline.sort(key=tm.start_extractor)
 
 Another usage of the key function would be together with heapq to implement some kind of merge sort
 
+## Development
+
+For more speed and efficiency this projects uses uv instead of pip.
+This means you have to install the uv package manager additionally for development.
+
+See how to install here:
+
+https://pypi.org/project/uv/
+
 ## Changes
 
 0.7.0 Breaking Change: transform_events_to_times is now an iterator and returns the event as second element
