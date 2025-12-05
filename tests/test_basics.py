@@ -1,8 +1,8 @@
 import contextlib
 from dataclasses import dataclass
+from datetime import UTC
 from datetime import datetime as dt
 from datetime import timedelta as td
-from datetime import timezone
 
 import pytest
 from faker import Faker
@@ -217,10 +217,8 @@ def test_result_fallback_utc():
     new_event = Event1(start=dt(2024, 1, 1), stop=dt(2024, 1, 4))
     # one time function
     assert timelineomat.streamline_event_times(
-        new_event, timeline, fallback_timezone=timezone.utc
-    ) == timelineomat.TimeRangeTuple(
-        start=dt(2024, 1, 3, tzinfo=timezone.utc), stop=dt(2024, 1, 4, tzinfo=timezone.utc)
-    )
+        new_event, timeline, fallback_timezone=UTC
+    ) == timelineomat.TimeRangeTuple(start=dt(2024, 1, 3, tzinfo=UTC), stop=dt(2024, 1, 4, tzinfo=UTC))
 
 
 def one_time_overwrite_end(ev):
