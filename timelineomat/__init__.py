@@ -1,4 +1,4 @@
-from .snapshots import BaseTMSnapshot, TMField
+from .snapshots import BaseTMSnapshot, SnapshotType, SnapshotTypeVariant, TMField, extract_snapshot_data
 from .timeline import (
     NoCallAllowedError,
     PositionOffsetTuple,
@@ -27,4 +27,7 @@ __all__ = [
     "TimeRangeTuple",
     "BaseTMSnapshot",
     "TMField",
+    "SnapshotType",
+    "SnapshotTypeVariant",
+    "extract_snapshot_data",
 ]

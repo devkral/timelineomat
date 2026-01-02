@@ -5,7 +5,7 @@ description = "Squeeze events into timelines and other timeline manipulations"
 authors = [{name = "Alexander Kaftan", email="devkral@web.de"}]
 license = "MIT"
 readme = "README.md"
-requires-python = ">=3.9"
+requires-python = ">=3.11"
 keywords = [
     "event",
     "time",
@@ -35,7 +35,6 @@ build-backend = "hatchling.build"
 
 [tool.ruff]
 line-length = 120
-target-version = "py311"
 
 [tool.ruff.lint]
 select = [
@@ -59,7 +58,7 @@ ignore= ["FA100"]
 installer = "uv"
 
 [tool.hatch.envs.hatch-test]
-dependencies = ["faker", "pytest"]
+extra-dependencies = ["faker"]
 installer = "uv"
 
 [tool.hatch.envs.hatch-static-analysis]
