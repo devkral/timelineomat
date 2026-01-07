@@ -103,6 +103,16 @@ dummy_snapshots = [
     },
 ]
 
+dummy_snapshots2 = [
+    *dummy_snapshots,
+    {
+        "snapshot_for": dt(year=2025, month=1, day=5),
+        "snapshot_type": SnapshotType.sparse,
+        "model_type": "DjangoContentType",
+        "stringified": 2,
+    },
+]
+
 dummy_snapshots_empty: list[Any] = []
 
 
@@ -133,8 +143,17 @@ def test_snapshot_before_all():
     assert snap is None
 
 
-def test_snapshot_after_all():
+def test_snapshot_after_all_full():
     snap = DummySnapshot.get_snapshot("dummy_snapshots", after=dt(year=2025, month=1, day=10))
     assert snap is not None
     assert snap.snapshot_for == dt(year=2025, month=1, day=4)
     assert len(snap._snapshots) == 1
+    assert snap.snapshot_type == SnapshotType.temporary
+
+
+def test_snapshot_after_all_sparse():
+    snap = DummySnapshot.get_snapshot("dummy_snapshots2", after=dt(year=2025, month=1, day=10))
+    assert snap is not None
+    assert snap.snapshot_for == dt(year=2025, month=1, day=5)
+    assert len(snap._snapshots) == 1
+    assert snap.snapshot_type == SnapshotType.temporary
