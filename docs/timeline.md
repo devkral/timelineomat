@@ -204,11 +204,11 @@ position, offset = tm.ordered_insert(
     ),
     ordered_timeline
 )
-position, offset = tm.streamlined_ordered_insert(new_event2, ordered_timeline, offset=offset)
+positions, offsets = tm.streamlined_ordered_insert(new_event2, ordered_timeline, offset=offset)
 # is stable
-position = tm.streamlined_ordered_insert(new_event2, ordered_timeline, ordered_timeline, offset=offset).position
+positions = tm.streamlined_ordered_insert(new_event2, ordered_timeline, ordered_timeline, offset=offset).position
 # here is a break in the monotic order and we get ascending inserts
-offset = 0
+offsets = (0,)
 # ascending is easier, so split streamlined_ordered_insert into their inner commands
 # for descending we need to build a reverse window of the array
 position, offset = tm.ordered_insert(tm.streamline_event(new_event3, ordered_timeline), ordered_timeline, offset=offset, direction="asc")

@@ -277,32 +277,29 @@ def test_ordered_insert_basic(direction):
     )
     # invalid element is skipped
     if direction == "asc":
-        assert position_offset == (2, 2)
-        position_offset = position_offset.offset
+        assert position_offset == ([2], [2])
     else:
-        assert position_offset == (1, 4)
+        assert position_offset == ([1], [4])
         # unset it for desc, we add asc events
-        position_offset = 0
+        position_offset[1][0] = 0
     # test stability
     position_offset = tm.ordered_insert(
-        Event1(start=dt(2024, 1, 2), stop=dt(2024, 1, 3)), timeline, offset=position_offset
+        Event1(start=dt(2024, 1, 2), stop=dt(2024, 1, 3)), timeline, offsets=position_offset.offsets
     )
     if direction == "asc":
-        assert position_offset == (3, 3)
-        position_offset = position_offset.offset
+        assert position_offset == ([3], [3])
     else:
-        assert position_offset == (1, 5)
-        position_offset = 0
+        assert position_offset == ([1], [5])
+        position_offset[1][0] = 0
     # overlapping
     position_offset = tm.ordered_insert(
         Event1(start=dt(2024, 1, 7), stop=dt(2024, 1, 12)), timeline, offset=position_offset
     )
     if direction == "asc":
-        assert position_offset == (5, 5)
-        position_offset = position_offset.offset
+        assert position_offset == ([5], [5])
     else:
-        assert position_offset == (5, 2)
-        position_offset = 0
+        assert position_offset == ([5], [2])
+        position_offset[1][0] = 0
 
 
 def test_ordered_insert_desc():
@@ -317,18 +314,24 @@ def test_ordered_insert_desc():
     ]
     tm = timelineomat.TimelineOMat(direction="desc")
     # we need to insert descending
-    position, offset = tm.ordered_insert(Event1(start=dt(2024, 1, 12), stop=dt(2024, 1, 13)), timeline)
-    assert offset == 1
-    assert position == 4
-    position, offset = tm.ordered_insert(Event1(start=dt(2024, 1, 12), stop=dt(2024, 1, 13)), timeline, offset=offset)
-    assert offset == 2
-    position, offset = tm.ordered_insert(Event1(start=dt(2024, 1, 7), stop=dt(2024, 1, 8)), timeline, offset=offset)
-    assert offset == 4
-    position = tm.ordered_insert(Event1(start=dt(2023, 1, 12), stop=dt(2023, 1, 13)), timeline, offset=offset).position
-    assert position == 0
+    positions, offsets = tm.ordered_insert(Event1(start=dt(2024, 1, 12), stop=dt(2024, 1, 13)), timeline)
+    assert offsets == [1]
+    assert positions == [4]
+    positions, offsets = tm.ordered_insert(
+        Event1(start=dt(2024, 1, 12), stop=dt(2024, 1, 13)), timeline, offsets=offsets
+    )
+    assert offsets == [2]
+    positions, offsets = tm.ordered_insert(Event1(start=dt(2024, 1, 7), stop=dt(2024, 1, 8)), timeline, offsets=offsets)
+    assert offsets == [4]
+    positions = tm.ordered_insert(
+        Event1(start=dt(2023, 1, 12), stop=dt(2023, 1, 13)), timeline, offsets=offsets
+    ).positions
+    assert positions == [0]
     # we are still descendend concerning the 2nd last insert and didn't updated the offset
-    position = tm.ordered_insert(Event1(start=dt(2024, 1, 2), stop=dt(2024, 1, 3)), timeline, offset=offset).position
-    assert position == 2
+    positions = tm.ordered_insert(
+        Event1(start=dt(2024, 1, 2), stop=dt(2024, 1, 3)), timeline, offsets=offsets
+    ).positions
+    assert positions == [2]
 
 
 def test_streamlined_ordered_insert_desc():
@@ -345,18 +348,18 @@ def test_streamlined_ordered_insert_desc():
     # we need to insert descending
     with pytest.raises(timelineomat.SkipEvent):
         tm.streamlined_ordered_insert(Event1(start=dt(2024, 1, 12), stop=dt(2024, 1, 13)), timeline)
-    position, offset = tm.streamlined_ordered_insert(Event1(start=dt(2024, 1, 7), stop=dt(2024, 1, 11)), timeline)
-    assert offset == 2
-    assert timeline[position].start == dt(2024, 1, 7)
-    assert timeline[position].stop == dt(2024, 1, 10)
+    positions, offsets = tm.streamlined_ordered_insert(Event1(start=dt(2024, 1, 7), stop=dt(2024, 1, 11)), timeline)
+    assert offsets == [2]
+    assert timeline[positions[0]].start == dt(2024, 1, 7)
+    assert timeline[positions[0]].stop == dt(2024, 1, 10)
     position = tm.streamlined_ordered_insert(
-        Event1(start=dt(2023, 1, 12), stop=dt(2023, 1, 13)), timeline, offset=offset
-    ).position
+        Event1(start=dt(2023, 1, 12), stop=dt(2023, 1, 13)), timeline, offsets=offsets
+    ).positions[0]
     assert position == 0
     # we are still descendend concerning the 2nd last insert and didn't updated the offset
     position = tm.streamlined_ordered_insert(
-        Event1(start=dt(2024, 1, 2), stop=dt(2024, 1, 3)), timeline, offset=offset
-    ).position
+        Event1(start=dt(2024, 1, 2), stop=dt(2024, 1, 3)), timeline, offsets=offsets
+    ).positions[0]
     assert position == 2
 
 

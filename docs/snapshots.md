@@ -7,3 +7,87 @@ Example 2: A contract with adjustments.
 This toolkit allows to easily build a snapshot model
 
 ## Overview
+
+- `BaseTMSnapshot`: Abstract class to implement.
+- `SnapshotType`/`SnapshotTypeVariant`: Snapshot types: full, sparse and temporary.
+- `TMField`: Actual field which is used in snapshots.
+- `extract_snapshot_data`: Extract snapshot data from snapshot object or dict. Returns a tuple
+
+### Types
+
+- `SnapshotType.full`: A complete snapshot which overwrite everything before. Can be used to create new eras. Every snapshot timeline should start with one.
+- `SnapshotType.sparse`: A sparse snapshot which overwrite snapshot data partly. Can be used for updates.
+- `SnapshotType.temporary`: A dynamic generated snapshot type which provides a helper state. Should never be saved only generated if you need a helper snapshot.
+
+
+## How to implement
+
+``` python
+
+from dataclasses import dataclass, field
+from timelineomat import BaseTMSnapshot, SnapshotType, TMField, extract_snapshot_data
+
+obj1 = object()
+obj2 = object()
+obj3 = object()
+obj4 = object()
+
+
+@dataclass(kw_only=True)
+class DummySnapshot(BaseTMSnapshot):
+    snapshot_for: dt
+    model_type: str
+    data: dict[str, Any] = field(default_factory=dict, init=False)
+    managed: set[str] = field(default_factory=set, init=False)
+    snapshot_type: SnapshotType
+
+    @classmethod
+    def get_snapshot_impl(cls, *, model_type, after=None, before=None, start_snapshot=None):
+        snapshots = [start_snapshot] if start_snapshot is not None else []
+        first_snapshot_data = None
+        current_snapshot_data = {}
+        snapshot_type = SnapshotType.temporary
+        for snap in database_query:
+            extracted, timepoint, snap_type = extract_snapshot_data(snap)
+            if before is not None and timepoint >= before:
+                break
+            if after is not None and timepoint < after:
+                if snap_type == SnapshotType.full:
+                    current_snapshot_data = first_snapshot_data = extracted
+                    first_snapshot_data["snapshot_for"] = current_snapshot_data["snapshot_for"] = timepoint
+                elif first_snapshot_data is not None:
+                    current_snapshot_data.update(extracted)
+                    first_snapshot_data.update(extracted)
+                    first_snapshot_data["snapshot_for"] = current_snapshot_data["snapshot_for"] = timepoint
+                continue
+            if snap_type != SnapshotType.full and (not snapshots or first_snapshot_data is not None):
+                raise ValueError("No full snapshot found")
+            if snap_type == SnapshotType.full:
+                current_snapshot_data.clear()
+            current_snapshot_data.update(extracted)
+            current_snapshot_data["snapshot_for"] = timepoint
+            snapshot_type = snap_type
+            if not snapshots and first_snapshot_data is not None:
+                if snap_type != SnapshotType.full:
+                    first_snapshot_data["snapshot_type"] = SnapshotType.temporary
+                    first_snapshot_data["snapshot_for"] = after or timepoint
+                    snapshots.append(first_snapshot_data)
+
+                first_snapshot_data = None
+            # start from the last full snapshot
+            if snap_type == SnapshotType.full and before is None and after is None:
+                snapshots.clear()
+                first_snapshot_data = None
+            snapshots.append(snap)
+        if first_snapshot_data is not None:
+            snapshots.insert(0, first_snapshot_data)
+        if not snapshots:
+            return None
+        instance = cls(
+            snapshot_type=snapshot_type,
+            **current_snapshot_data,
+        )
+        instance._snapshots = snapshots
+        return instance
+
+```

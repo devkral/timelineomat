@@ -16,7 +16,7 @@ from datetime import datetime as dt
 from datetime import timezone as tz
 from functools import lru_cache
 from itertools import chain
-from typing import Any, Literal, NamedTuple, NewType, TypeVar, cast
+from typing import Any, Literal, NamedTuple, NewType, TypedDict, TypeVar, Unpack, cast
 
 Event = TypeVar("Event")
 Offset = NewType("Offset", int)
@@ -27,6 +27,7 @@ CallableExtractor = Callable[[Event], ExtractionResult]
 Extractor = str | CallableExtractor
 CallableSetter = Callable[[Event, dt], None]
 Setter = str | CallableSetter
+_T_kwargs = TypeVar("_T_kwargs")
 
 
 class TimeRangeTuple(NamedTuple):
@@ -35,8 +36,8 @@ class TimeRangeTuple(NamedTuple):
 
 
 class PositionOffsetTuple(NamedTuple):
-    position: Position
-    offset: Offset
+    positions: Sequence[Position]
+    offsets: Sequence[Offset]
 
 
 class SkipEvent(BaseException):
@@ -150,7 +151,6 @@ def _streamline_event_times(
     stop_extractor: Extractor = "stop",
     filter_fn: FilterFunction | None = None,
     fallback_timezone: tz | None = None,
-    **kwargs,
 ) -> tuple[TimeRangeTuple, TimeRangeTuple]:
     start_extractor = create_extractor(start_extractor)
     stop_extractor = create_extractor(stop_extractor)
@@ -175,15 +175,32 @@ def _streamline_event_times(
     return TimeRangeTuple(start=start, stop=stop), orig_tuple
 
 
+class _streamline_event_base_kwargs(TypedDict, total=False):
+    filter_fn: FilterFunction | None
+    fallback_timezone: tz | None
+
+
+class _streamline_event_times_kwargs(_streamline_event_base_kwargs):
+    occlusions: list[TimeRangeTuple] | None
+    start_extractor: Extractor
+    stop_extractor: Extractor
+
+
 def streamline_event_times(
     event: Event,
-    *timelines,
+    *timelines: Iterable[Event],
     occlusions: list[TimeRangeTuple] | None = None,
-    **kwargs,
+    start_extractor: Extractor = "start",
+    stop_extractor: Extractor = "stop",
+    **kwargs: Unpack[_streamline_event_base_kwargs],
 ) -> TimeRangeTuple:
     try:
         new_tuple, orig_tuple = _streamline_event_times(
-            event, chain.from_iterable(timelines) if timelines else _empty, **kwargs
+            event,
+            chain.from_iterable(timelines) if timelines else _empty,
+            start_extractor=start_extractor,
+            stop_extractor=stop_extractor,
+            **kwargs,
         )
     except SkipOccludedEvent as exc:
         if occlusions is not None:
@@ -197,14 +214,23 @@ def streamline_event_times(
     return new_tuple
 
 
+class _streamline_event_kwargs(_streamline_event_base_kwargs):
+    start_extractor: Extractor
+    stop_extractor: Extractor
+    start_setter: Setter | None
+    stop_setter: Setter | None
+    occlusions: list[TimeRangeTuple] | None
+
+
 def streamline_event(
     event: Event,
-    *timelines,
+    *timelines: Iterable[Event],
     start_extractor: Extractor = "start",
     stop_extractor: Extractor = "stop",
     start_setter: Setter | None = None,
     stop_setter: Setter | None = None,
-    **kwargs,
+    occlusions: list[TimeRangeTuple] | None = None,
+    **kwargs: Unpack[_streamline_event_base_kwargs],
 ) -> Event:
     if not timelines:
         return event
@@ -223,6 +249,7 @@ def streamline_event(
         chain.from_iterable(timelines),
         start_extractor=start_extractor,
         stop_extractor=stop_extractor,
+        occlusions=occlusions,
         **kwargs,
     )
     start_setter(event, new_tuple.start)
@@ -230,15 +257,18 @@ def streamline_event(
     return event
 
 
+class _transform_events_to_times_kwargs(_streamline_event_base_kwargs):
+    start_extractor: Extractor
+    stop_extractor: Extractor
+
+
 def transform_events_to_times(
-    *timelines,
+    *timelines: Iterable[Event],
     start_extractor: Extractor = "start",
     stop_extractor: Extractor = "stop",
     filter_fn: FilterFunction | None = None,
     fallback_timezone: tz | None = None,
-    **kwargs,
 ) -> Iterable[tuple[TimeRangeTuple, Event]]:
-    assert "occlusions" not in kwargs, "occlusions not supported for this function"
     start_extractor = create_extractor(start_extractor)
     stop_extractor = create_extractor(stop_extractor)
     if not timelines:
@@ -255,19 +285,15 @@ def transform_events_to_times(
 
 def _ordered_insert(
     event: Event,
+    event_times: TimeRangeTuple,
     timeline: MutableSequence[Event],
-    *,
-    offset: Offset = 0,  # type: ignore
-    direction: Literal["asc", "desc"] = "asc",
-    start_extractor: Extractor = "start",
-    stop_extractor: Extractor = "stop",
-    fallback_timezone: tz | None = None,
-    **kwargs,
+    offset: Offset,
+    direction: Literal["asc", "desc"],
+    start_extractor: CallableExtractor,
+    stop_extractor: CallableExtractor,
+    fallback_timezone: tz | None,
+    no_insert: bool,
 ) -> Position:
-    start_extractor = create_extractor(start_extractor)
-    stop_extractor = create_extractor(stop_extractor)
-    event_times = extract_tuple_from_event(event, start_extractor, stop_extractor, fallback_timezone)
-
     if not len(timeline):
         timeline.append(event)
         return cast(Position, 0)
@@ -284,48 +310,96 @@ def _ordered_insert(
             continue
         if direction == "asc":
             if ev_times > event_times:
-                timeline.insert(position, event)
+                if not no_insert:
+                    timeline.insert(position, event)
                 return cast(Position, position)
         else:
             if ev_times < event_times:
-                timeline.insert(cast(int, last_pos), event)
+                if not no_insert:
+                    timeline.insert(cast(int, last_pos), event)
                 return cast(Position, last_pos)
         last_pos = position
     if direction == "asc":
-        timeline.append(event)
+        if not no_insert:
+            timeline.append(event)
         return cast(Position, length)
     else:
-        timeline.insert(0, event)
+        if not no_insert:
+            timeline.insert(0, event)
         return cast(Position, 0)
+
+
+class _ordered_insert_kwargs(TypedDict, total=False):
+    offsets: Sequence[Offset] | None
+    no_update_timelines: set[int] | None
+    start_extractor: Extractor
+    stop_extractor: Extractor
+    fallback_timezone: tz | None
+    direction: Literal["asc", "desc"]
 
 
 def ordered_insert(
     event: Event,
-    timeline: MutableSequence[Event],
-    *,
+    *timelines: Sequence[Event],
+    offsets: Sequence[Offset] | None = None,
+    no_update_timelines: set[int] | None = None,
+    start_extractor: Extractor = "start",
+    stop_extractor: Extractor = "stop",
+    fallback_timezone: tz | None = None,
     direction: Literal["asc", "desc"] = "asc",
-    **kwargs,
 ) -> PositionOffsetTuple:
-    assert "occlusions" not in kwargs, "occlusions not supported for this function"
-    position = _ordered_insert(event, timeline, direction=direction, **kwargs)
-    if direction == "desc":
-        return PositionOffsetTuple(position=position, offset=len(timeline) - position - 1)  # type: ignore
-    return PositionOffsetTuple(position=position, offset=cast(Offset, position))
+    start_extractor = create_extractor(start_extractor)
+    stop_extractor = create_extractor(stop_extractor)
+    return_positions: list[Position] = []
+    return_offsets: list[Offset] = []
+    event_times = extract_tuple_from_event(
+        event,
+        start_extractor=start_extractor,
+        stop_extractor=stop_extractor,
+        fallback_timezone=fallback_timezone,
+    )
+    for count, timeline in enumerate(timelines):
+        position = _ordered_insert(
+            event,
+            event_times=event_times,
+            timeline=cast(
+                MutableSequence[Event],
+                timeline,
+            ),
+            offset=cast(Offset, 0) if offsets is None else offsets[count],
+            direction=direction,
+            fallback_timezone=fallback_timezone,
+            no_insert=False if no_update_timelines is None else count in no_update_timelines,
+            start_extractor=start_extractor,
+            stop_extractor=stop_extractor,
+        )
+        return_positions.append(cast(Position, position))
+        if direction == "desc":
+            return_offsets.append(cast(Offset, len(timeline) - position - 1))
+        else:
+            return_offsets.append(cast(Offset, position))
+    return PositionOffsetTuple(return_positions, return_offsets)
+
+
+class _streamline_ordered_insert_kwargs(_streamline_event_kwargs):
+    offsets: Sequence[Offset] | None
+    no_update_timelines: set[int] | None
+    direction: Literal["asc", "desc"]
 
 
 def streamlined_ordered_insert(
     event: Event,
-    timeline: MutableSequence[Event],
-    *,
+    *timelines: Sequence[Event],
     filter_fn: FilterFunction | None = None,
-    occlusions: list[TimeRangeTuple] | None = None,
+    offsets: Sequence[Offset] | None = None,
+    no_update_timelines: set[int] | None = None,
     direction: Literal["asc", "desc"] = "asc",
     start_extractor: Extractor = "start",
     stop_extractor: Extractor = "stop",
     start_setter: Setter | None = None,
     stop_setter: Setter | None = None,
-    offset: int = 0,
-    **kwargs,
+    fallback_timezone: tz | None = None,
+    occlusions: list[TimeRangeTuple] | None = None,
 ) -> PositionOffsetTuple:
     if start_setter is not None:
         start_setter = create_setter(start_setter)
@@ -343,20 +417,25 @@ def streamlined_ordered_insert(
     return ordered_insert(
         streamline_event(
             event,
-            _array_window(timeline, offset, direction),
-            occlusions=occlusions,
+            *(
+                _array_window(timeline, 0 if offsets is None else offsets[count], direction)
+                for count, timeline in enumerate(timelines)
+            ),
             start_extractor=start_extractor,
             stop_extractor=stop_extractor,
             start_setter=start_setter,
             stop_setter=stop_setter,
-            **kwargs,
+            filter_fn=filter_fn,
+            occlusions=occlusions,
+            fallback_timezone=fallback_timezone,
         ),
-        timeline,
+        *timelines,
+        no_update_timelines=no_update_timelines,
         start_extractor=start_extractor,
         stop_extractor=stop_extractor,
-        offset=offset,
+        offsets=offsets,
         direction=direction,
-        **kwargs,
+        fallback_timezone=fallback_timezone,
     )
 
 
@@ -396,7 +475,9 @@ class TimelineOMat:
             # because of disallow_call_instant we correctly raise for non-strings
             self.stop_setter = create_setter(cast(str, stop_extractor), disallow_call=True)
 
-    def streamline_event_times(self, event: Event, *timelines, **kwargs) -> TimeRangeTuple:
+    def streamline_event_times(
+        self, event: Event, *timelines: Iterable[Event], **kwargs: Unpack[_streamline_event_times_kwargs]
+    ) -> TimeRangeTuple:
         if timelines:
             return streamline_event_times(
                 event,
@@ -417,7 +498,9 @@ class TimelineOMat:
                 occlusions=kwargs.get("occlusions"),
             )
 
-    def streamline_event(self, event: Event, *timelines, **kwargs) -> Event:
+    def streamline_event(
+        self, event: Event, *timelines: Iterable[Event], **kwargs: Unpack[_streamline_event_kwargs]
+    ) -> Event:
         if not timelines:
             return event
         return streamline_event(
@@ -432,7 +515,9 @@ class TimelineOMat:
             occlusions=kwargs.get("occlusions"),
         )
 
-    def transform_events_to_times(self, *timelines, **kwargs) -> Iterable[tuple[TimeRangeTuple, Event]]:
+    def transform_events_to_times(
+        self, *timelines: Iterable[Event], **kwargs
+    ) -> Iterable[tuple[TimeRangeTuple, Event]]:
         assert "occlusions" not in kwargs, "occlusions not supported for this function"
         if not timelines:
             return []
@@ -447,16 +532,13 @@ class TimelineOMat:
     def ordered_insert(
         self,
         event: Event,
-        timeline: MutableSequence[Event],
-        *,
-        offset: Offset = 0,  # type: ignore
-        **kwargs,
+        *timelines: Sequence[Event],
+        **kwargs: Unpack[_ordered_insert_kwargs],
     ) -> PositionOffsetTuple:
-        assert "occlusions" not in kwargs, "occlusions not supported for this function"
         return ordered_insert(
             event,
-            timeline,
-            offset=offset,
+            *timelines,
+            offsets=kwargs.get("offsets"),
             start_extractor=kwargs.get("start_extractor", self.start_extractor),
             stop_extractor=kwargs.get("stop_extractor", self.stop_extractor),
             direction=kwargs.get("direction", self.direction),
@@ -466,15 +548,13 @@ class TimelineOMat:
     def streamlined_ordered_insert(
         self,
         event: Event,
-        timeline: MutableSequence[Event],
-        *,
-        offset: Offset = 0,  # type: ignore
-        **kwargs,
+        *timelines: Sequence[Event],
+        **kwargs: Unpack[_streamline_ordered_insert_kwargs],
     ) -> PositionOffsetTuple:
         return streamlined_ordered_insert(
             event,
-            timeline,
-            offset=offset,
+            *timelines,
+            offsets=kwargs.get("offsets"),
             start_extractor=kwargs.get("start_extractor", self.start_extractor),
             stop_extractor=kwargs.get("stop_extractor", self.stop_extractor),
             direction=kwargs.get("direction", self.direction),
@@ -482,5 +562,4 @@ class TimelineOMat:
             filter_fn=kwargs.get("filter_fn", self.filter_fn),
             start_setter=kwargs.get("start_setter", self.start_setter),
             stop_setter=kwargs.get("stop_setter", self.stop_setter),
-            occlusions=kwargs.get("occlusions"),
         )
