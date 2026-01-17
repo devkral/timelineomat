@@ -26,6 +26,12 @@ See how to install here:
 
 https://pypi.org/project/uv/
 
+### Development Speed
+
+I think after integrating snapshots the main focus will be on stabilization and documentation.
+This is only a small library with a narrow context so I don't think there is much to improve/correct and updates will be seldom.
+But proof me wrong.
+
 ## Changes
 
 1.0.0 Breaking Change: `ordered_insert` returns now a PositionsOffsets-Tuple instead of a tuple with just one element. Add also snapshots here.
