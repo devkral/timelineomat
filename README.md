@@ -28,7 +28,7 @@ https://pypi.org/project/uv/
 
 ## Changes
 
-0.8.0 Add snapshots
+1.0.0 Breaking Change: `ordered_insert` returns now a PositionsOffsets-Tuple instead of a tuple with just one element. Add also snapshots here.
 0.7.0 Breaking Change: transform_events_to_times is now an iterator and returns the event as second element
 0.6.0 add streamlined_ordered_insert
 0.5.0 add occlusions argument

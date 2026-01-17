@@ -13,8 +13,8 @@ There are 5 different functions which also exist as methods of the TimelineOMat 
 - streamline_event_times: checks how to short the given event to fit into the timelines. Without a timeline the result can be used for sorting (see section later)
 - streamline_event: uses streamline_event_times plus setters to update the event and returns event
 - transform_events_to_times: transforms timelines to TimeRangeTuple for e.g. databases
-- ordered_insert: insert an event in a timeline so it stays ordered. By default an offset is returned. It can be used in case of ascending inserts to improve the performance
-- streamline_ordered_insert: combined functions of ordered_insert and streamline_event. Works efficient on arrays also in descending order direction
+- ordered_insert: insert an event in a timeline so it stays ordered. By default an offset is returned. It can be used in case of ordered inserts to improve the performance. Returned is a (positions, offsets) tuple (PositionsOffsetsTuple)
+- streamline_ordered_insert: combined functions of ordered_insert and streamline_event.
 
 ordered_insert also takes the parameters direction and offset (direction can be set on TimelineOMat). This allows performant inserts and collision checks.
 
@@ -59,9 +59,7 @@ q = Q()
 for timetuple, ev in tm.transform_events_to_times(timeline):
     # timetuple is actually a 2 element tuple
     q |= Q(timepoint__range=timetuple) & ~Q(id=ev.id)
-
 ```
-
 
 ## Tricks to integrate in different datastructures
 
@@ -122,7 +120,6 @@ tm = TimelineOMat()
 it is possible to extract the data with
 
 ``` python
-
 
 def one_time_overwrite_end(ev):
     if isinstance(ev, dict):
@@ -188,34 +185,41 @@ class Event:
     start: dt
     stop: dt
 
-ordered_timeline = [
+ordered_timeline1 = [
     Event(start=dt(2024, 1, 1), stop=dt(2024, 1, 2)),
     Event(start=dt(2024, 1, 2), stop=dt(2024, 1, 3))
 ]
+
+ordered_timeline2 = []
+ordered_timeline3 = []
 new_event1 = Event(start=dt(2024, 1, 1), stop=dt(2024, 1, 4))
 new_event2 = Event(start=dt(2023, 1, 1), stop=dt(2023, 1, 4))
 new_event3 = Event(start=dt(2025, 1, 1), stop=dt(2025, 1, 4))
 new_event4 = Event(start=dt(2025, 2, 1), stop=dt(2025, 2, 4))
 # here we generate the setters and extractors only onetime
 tm = TimelineOMat(direction="desc")
-position, offset = tm.ordered_insert(
+positions, offsets = tm.ordered_insert(
     tm.streamline_event(
-        new_event1, ordered_timeline[:len(ordered_timeline)-1-offset]
+        new_event1, ordered_timeline1[:len(ordered_timeline)-1-offset]
     ),
-    ordered_timeline
+    ordered_timeline1,
+    ordered_timeline2
 )
-positions, offsets = tm.streamlined_ordered_insert(new_event2, ordered_timeline, offset=offset)
+# combined
+positions, offsets = tm.streamlined_ordered_insert(new_event2, ordered_timeline1, ordered_timeline2, offsets=offsets)
+# updates to only the third timeline, will however advance the offset
+tm.streamlined_ordered_insert(
+    new_event3, ordered_timeline1, ordered_timeline2, ordered_timeline3, offsets=offsets, no_update_timelines={0, 1}
+)
 # is stable
-positions = tm.streamlined_ordered_insert(new_event2, ordered_timeline, ordered_timeline, offset=offset).position
+positions = tm.streamlined_ordered_insert(new_event2, ordered_timeline1, ordered_timeline2, offsets=offsets).positions
 # here is a break in the monotic order and we get ascending inserts
 offsets = (0,)
 # ascending is easier, so split streamlined_ordered_insert into their inner commands
 # for descending we need to build a reverse window of the array
 position, offset = tm.ordered_insert(tm.streamline_event(new_event3, ordered_timeline), ordered_timeline, offset=offset, direction="asc")
 position, offset = tm.ordered_insert(tm.streamline_event(new_event4, ordered_timeline[-1:]), ordered_timeline, offset=offset, direction="asc")
-
 ```
-
 
 ## How to integrate in db systems
 

@@ -7,7 +7,7 @@ __all__ = [
     "SkipInvalidEvent",
     "SkipOccludedEvent",
     "NoCallAllowedError",
-    "PositionOffsetTuple",
+    "PositionsOffsetsTuple",
     "TimeRangeTuple",
 ]
 
@@ -35,7 +35,7 @@ class TimeRangeTuple(NamedTuple):
     stop: dt
 
 
-class PositionOffsetTuple(NamedTuple):
+class PositionsOffsetsTuple(NamedTuple):
     positions: Sequence[Position]
     offsets: Sequence[Offset]
 
@@ -347,7 +347,7 @@ def ordered_insert(
     stop_extractor: Extractor = "stop",
     fallback_timezone: tz | None = None,
     direction: Literal["asc", "desc"] = "asc",
-) -> PositionOffsetTuple:
+) -> PositionsOffsetsTuple:
     start_extractor = create_extractor(start_extractor)
     stop_extractor = create_extractor(stop_extractor)
     return_positions: list[Position] = []
@@ -378,7 +378,7 @@ def ordered_insert(
             return_offsets.append(cast(Offset, len(timeline) - position - 1))
         else:
             return_offsets.append(cast(Offset, position))
-    return PositionOffsetTuple(return_positions, return_offsets)
+    return PositionsOffsetsTuple(return_positions, return_offsets)
 
 
 class _streamline_ordered_insert_kwargs(_streamline_event_kwargs):
@@ -400,7 +400,7 @@ def streamlined_ordered_insert(
     stop_setter: Setter | None = None,
     fallback_timezone: tz | None = None,
     occlusions: list[TimeRangeTuple] | None = None,
-) -> PositionOffsetTuple:
+) -> PositionsOffsetsTuple:
     if start_setter is not None:
         start_setter = create_setter(start_setter)
     else:
@@ -534,7 +534,7 @@ class TimelineOMat:
         event: Event,
         *timelines: Sequence[Event],
         **kwargs: Unpack[_ordered_insert_kwargs],
-    ) -> PositionOffsetTuple:
+    ) -> PositionsOffsetsTuple:
         return ordered_insert(
             event,
             *timelines,
@@ -550,7 +550,7 @@ class TimelineOMat:
         event: Event,
         *timelines: Sequence[Event],
         **kwargs: Unpack[_streamline_ordered_insert_kwargs],
-    ) -> PositionOffsetTuple:
+    ) -> PositionsOffsetsTuple:
         return streamlined_ordered_insert(
             event,
             *timelines,

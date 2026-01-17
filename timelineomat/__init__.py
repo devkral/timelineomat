@@ -12,7 +12,7 @@ from .timeline import (
     streamline_event_times,
 )
 
-__version__ = "0.8.0"
+__version__ = "1.0.0"
 
 __all__ = [
     "streamline_event_times",
