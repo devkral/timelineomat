@@ -91,3 +91,17 @@ class DummySnapshot(BaseTMSnapshot):
         return instance
 
 ```
+
+
+## Integrate with Timeline
+
+Imagine every snapshot being part of a timeline. Here we have only one timestamp which starts a
+new era but consider every era being defined between two timestamps (start, stop) except the first and last one.
+
+This means we have dynamic timespans (events in the other terminology). We can integrate them however by order inserting them and use
+the timestamp for start and stop.
+
+By having a timespan of zero there is no overlapping issue except two snapshots are on the same datetime for the same type. But this should be prevented.
+by using e.g. unique_together in a db system.
+
+You should use the ordering feature of the underlying infrastructure (db) instead of doing it with ordered_inserts however, because it is more performant.

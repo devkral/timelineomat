@@ -58,7 +58,7 @@ ignore= ["FA100"]
 installer = "uv"
 
 [tool.hatch.envs.hatch-test]
-extra-dependencies = ["faker"]
+extra-dependencies = ["faker", "edgy[sqlite]"]
 installer = "uv"
 
 [tool.hatch.envs.hatch-static-analysis]
