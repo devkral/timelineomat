@@ -263,7 +263,7 @@ def test_onetime_overwrite():
 
 @pytest.mark.parametrize("direction", ["asc", "desc"])
 def test_ordered_insert_basic(direction):
-    timeline = [
+    timeline1 = [
         Event1(start=dt(2024, 1, 1), stop=dt(2024, 1, 2)),
         # invalid event
         {},
@@ -271,29 +271,47 @@ def test_ordered_insert_basic(direction):
         Event1(start=dt(2024, 1, 10), stop=dt(2024, 1, 11)),
         Event1(start=dt(2024, 1, 12), stop=dt(2024, 1, 13)),
     ]
-    tm = timelineomat.TimelineOMat(direction=direction)
+    timeline2 = []
+    timeline3 = ()
+    tm = timelineomat.TimelineOMat(direction=direction, no_update_timelines={2})
     position_offset = tm.ordered_insert(
-        Event1(start=dt(2024, 1, 2), stop=dt(2024, 1, 3)), timeline, direction=direction
+        Event1(start=dt(2024, 1, 2), stop=dt(2024, 1, 3)),
+        timeline1,
+        timeline2,
+        timeline3,
+        no_update_timelines={2},
+        direction=direction,
     )
     # invalid element is skipped
     if direction == "asc":
-        assert position_offset == ([2], [2])
+        assert position_offset == ([2, 0, 0], [2, 0, 0])
     else:
-        assert position_offset == ([1], [4])
+        assert position_offset == ([1, 0, 0], [4, 0, 0])
         # unset it for desc, we add asc events
         position_offset[1][0] = 0
+        position_offset[1][1] = 0
+    assert timeline3 == []
     # test stability
     position_offset = tm.ordered_insert(
-        Event1(start=dt(2024, 1, 2), stop=dt(2024, 1, 3)), timeline, offsets=position_offset.offsets
+        Event1(start=dt(2024, 1, 2), stop=dt(2024, 1, 3)),
+        timeline1,
+        timeline2,
+        timeline3,
+        offsets=position_offset.offsets,
     )
     if direction == "asc":
         assert position_offset == ([3], [3])
     else:
         assert position_offset == ([1], [5])
         position_offset[1][0] = 0
+    assert timeline3 == []
     # overlapping
     position_offset = tm.ordered_insert(
-        Event1(start=dt(2024, 1, 7), stop=dt(2024, 1, 12)), timeline, offset=position_offset
+        Event1(start=dt(2024, 1, 7), stop=dt(2024, 1, 12)),
+        timeline1,
+        timeline2,
+        timeline3,
+        offset=position_offset,
     )
     if direction == "asc":
         assert position_offset == ([5], [5])

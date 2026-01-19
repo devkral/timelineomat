@@ -1,7 +1,7 @@
 from .snapshots import BaseTMSnapshot, SnapshotType, SnapshotTypeVariant, TMField, extract_snapshot_data
 from .timeline import (
     NoCallAllowedError,
-    PositionOffsetTuple,
+    PositionsOffsetsTuple,
     SkipEvent,
     SkipInvalidEvent,
     SkipOccludedEvent,
@@ -23,7 +23,7 @@ __all__ = [
     "SkipInvalidEvent",
     "SkipOccludedEvent",
     "NoCallAllowedError",
-    "PositionOffsetTuple",
+    "PositionsOffsetsTuple",
     "TimeRangeTuple",
     "BaseTMSnapshot",
     "TMField",

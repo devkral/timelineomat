@@ -246,7 +246,7 @@ def streamline_event(
         stop_setter = create_setter(cast(str, stop_extractor), disallow_call_instant=True)
     new_tuple = streamline_event_times(
         event,
-        chain.from_iterable(timelines),
+        *timelines,
         start_extractor=start_extractor,
         stop_extractor=stop_extractor,
         occlusions=occlusions,
@@ -444,6 +444,7 @@ class TimelineOMat:
     stop_extractor: CallableExtractor
     start_setter: CallableSetter
     stop_setter: CallableSetter
+    no_update_timelines: set[int] | None
     filter_fn: FilterFunction | None
     fallback_timezone: tz | None
 
@@ -454,6 +455,7 @@ class TimelineOMat:
         stop_extractor: Extractor = "stop",
         start_setter: Setter | None = None,
         stop_setter: Setter | None = None,
+        no_update_timelines: set[int] | None = None,
         filter_fn: FilterFunction | None = None,
         fallback_timezone: tz | None = None,
         # for ordered_insert
@@ -461,6 +463,7 @@ class TimelineOMat:
     ):
         self.start_extractor = create_extractor(start_extractor)
         self.stop_extractor = create_extractor(stop_extractor)
+        self.no_update_timelines = no_update_timelines
         self.filter_fn = filter_fn
         self.fallback_timezone = fallback_timezone
         self.direction = direction
@@ -478,25 +481,15 @@ class TimelineOMat:
     def streamline_event_times(
         self, event: Event, *timelines: Iterable[Event], **kwargs: Unpack[_streamline_event_times_kwargs]
     ) -> TimeRangeTuple:
-        if timelines:
-            return streamline_event_times(
-                event,
-                chain.from_iterable(timelines),
-                start_extractor=kwargs.get("start_extractor", self.start_extractor),
-                stop_extractor=kwargs.get("stop_extractor", self.stop_extractor),
-                filter_fn=kwargs.get("filter_fn", self.filter_fn),
-                fallback_timezone=kwargs.get("fallback_timezone", self.fallback_timezone),
-                occlusions=kwargs.get("occlusions"),
-            )
-        else:
-            return streamline_event_times(
-                event,
-                start_extractor=kwargs.get("start_extractor", self.start_extractor),
-                stop_extractor=kwargs.get("stop_extractor", self.stop_extractor),
-                filter_fn=kwargs.get("filter_fn", self.filter_fn),
-                fallback_timezone=kwargs.get("fallback_timezone", self.fallback_timezone),
-                occlusions=kwargs.get("occlusions"),
-            )
+        return streamline_event_times(
+            event,
+            *timelines,
+            start_extractor=kwargs.get("start_extractor", self.start_extractor),
+            stop_extractor=kwargs.get("stop_extractor", self.stop_extractor),
+            filter_fn=kwargs.get("filter_fn", self.filter_fn),
+            fallback_timezone=kwargs.get("fallback_timezone", self.fallback_timezone),
+            occlusions=kwargs.get("occlusions"),
+        )
 
     def streamline_event(
         self, event: Event, *timelines: Iterable[Event], **kwargs: Unpack[_streamline_event_kwargs]
@@ -505,7 +498,7 @@ class TimelineOMat:
             return event
         return streamline_event(
             event,
-            chain.from_iterable(timelines),
+            *timelines,
             start_extractor=kwargs.get("start_extractor", self.start_extractor),
             stop_extractor=kwargs.get("stop_extractor", self.stop_extractor),
             filter_fn=kwargs.get("filter_fn", self.filter_fn),
@@ -516,13 +509,12 @@ class TimelineOMat:
         )
 
     def transform_events_to_times(
-        self, *timelines: Iterable[Event], **kwargs
+        self, *timelines: Iterable[Event], **kwargs: Unpack[_transform_events_to_times_kwargs]
     ) -> Iterable[tuple[TimeRangeTuple, Event]]:
-        assert "occlusions" not in kwargs, "occlusions not supported for this function"
         if not timelines:
             return []
         return transform_events_to_times(
-            chain.from_iterable(timelines),
+            *timelines,
             start_extractor=kwargs.get("start_extractor", self.start_extractor),
             stop_extractor=kwargs.get("stop_extractor", self.stop_extractor),
             filter_fn=kwargs.get("filter_fn", self.filter_fn),
@@ -538,6 +530,7 @@ class TimelineOMat:
         return ordered_insert(
             event,
             *timelines,
+            no_update_timelines=kwargs.get("no_update_timelines", self.no_update_timelines),
             offsets=kwargs.get("offsets"),
             start_extractor=kwargs.get("start_extractor", self.start_extractor),
             stop_extractor=kwargs.get("stop_extractor", self.stop_extractor),
@@ -554,6 +547,7 @@ class TimelineOMat:
         return streamlined_ordered_insert(
             event,
             *timelines,
+            no_update_timelines=kwargs.get("no_update_timelines", self.no_update_timelines),
             offsets=kwargs.get("offsets"),
             start_extractor=kwargs.get("start_extractor", self.start_extractor),
             stop_extractor=kwargs.get("stop_extractor", self.stop_extractor),
