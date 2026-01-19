@@ -18,12 +18,13 @@ There are 5 different functions which also exist as methods of the TimelineOMat 
 
 ordered_insert also takes the parameters direction and offset (direction can be set on TimelineOMat). This allows performant inserts and collision checks.
 
-When ordered_insert is called with offset 0 or unset it is safe to call even when the insertion order is chaotic
+When ordered_insert is called with offset 0 or unset it is safe to call even when the insertion order is chaotic.
+Otherwise the insert calls must be ordered.
 
-The timeline must be ordered anyway for ordered_insert
+The timeline must be always ordered for ordered_insert.
 
 There is a new argument occlusions which must be of type list. It receives the 
-occluded time ranges
+occluded time ranges.
 
 ``` python
 from dataclasses import dataclass

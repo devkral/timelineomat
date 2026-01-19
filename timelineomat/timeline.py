@@ -293,15 +293,18 @@ def _ordered_insert(
     stop_extractor: CallableExtractor,
     fallback_timezone: tz | None,
     no_insert: bool,
-) -> Position:
+) -> tuple[bool, Position]:
     if not len(timeline):
-        timeline.append(event)
-        return cast(Position, 0)
+        if not no_insert:
+            timeline.append(event)
+        return no_insert, cast(Position, 0)
     last_pos = None
     length = len(timeline)
     for position in range(offset, length):
         if direction == "desc":
             position = length - position - 1
+        if last_pos is None:
+            last_pos = position
         ev = timeline[position]
         try:
             ev_times = extract_tuple_from_event(ev, start_extractor, stop_extractor, fallback_timezone)
@@ -312,21 +315,21 @@ def _ordered_insert(
             if ev_times > event_times:
                 if not no_insert:
                     timeline.insert(position, event)
-                return cast(Position, position)
+                return no_insert, cast(Position, position)
         else:
             if ev_times < event_times:
                 if not no_insert:
                     timeline.insert(cast(int, last_pos), event)
-                return cast(Position, last_pos)
+                return no_insert, cast(Position, last_pos)
         last_pos = position
     if direction == "asc":
         if not no_insert:
             timeline.append(event)
-        return cast(Position, length)
+        return no_insert, cast(Position, length)
     else:
         if not no_insert:
             timeline.insert(0, event)
-        return cast(Position, 0)
+        return no_insert, cast(Position, 0)
 
 
 class _ordered_insert_kwargs(TypedDict, total=False):
@@ -359,7 +362,7 @@ def ordered_insert(
         fallback_timezone=fallback_timezone,
     )
     for count, timeline in enumerate(timelines):
-        position = _ordered_insert(
+        no_insert, position = _ordered_insert(
             event,
             event_times=event_times,
             timeline=cast(
@@ -375,7 +378,7 @@ def ordered_insert(
         )
         return_positions.append(cast(Position, position))
         if direction == "desc":
-            return_offsets.append(cast(Offset, len(timeline) - position - 1))
+            return_offsets.append(cast(Offset, len(timeline) - position - (0 if no_insert else 1)))
         else:
             return_offsets.append(cast(Offset, position))
     return PositionsOffsetsTuple(return_positions, return_offsets)

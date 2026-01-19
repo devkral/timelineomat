@@ -262,7 +262,7 @@ def test_onetime_overwrite():
 
 
 @pytest.mark.parametrize("direction", ["asc", "desc"])
-def test_ordered_insert_basic(direction):
+def test_ordered_insert_multiline(direction):
     timeline1 = [
         Event1(start=dt(2024, 1, 1), stop=dt(2024, 1, 2)),
         # invalid event
@@ -272,25 +272,25 @@ def test_ordered_insert_basic(direction):
         Event1(start=dt(2024, 1, 12), stop=dt(2024, 1, 13)),
     ]
     timeline2 = []
-    timeline3 = ()
+    timeline3_init = (Event1(start=dt(2024, 1, 11), stop=dt(2024, 1, 12)),)
+    timeline3 = tuple(timeline3_init)
     tm = timelineomat.TimelineOMat(direction=direction, no_update_timelines={2})
     position_offset = tm.ordered_insert(
         Event1(start=dt(2024, 1, 2), stop=dt(2024, 1, 3)),
         timeline1,
         timeline2,
         timeline3,
-        no_update_timelines={2},
         direction=direction,
     )
     # invalid element is skipped
     if direction == "asc":
         assert position_offset == ([2, 0, 0], [2, 0, 0])
     else:
-        assert position_offset == ([1, 0, 0], [4, 0, 0])
+        assert position_offset == ([1, 0, 0], [4, 0, 1])
         # unset it for desc, we add asc events
         position_offset[1][0] = 0
         position_offset[1][1] = 0
-    assert timeline3 == []
+    assert timeline3 == timeline3_init
     # test stability
     position_offset = tm.ordered_insert(
         Event1(start=dt(2024, 1, 2), stop=dt(2024, 1, 3)),
@@ -300,11 +300,12 @@ def test_ordered_insert_basic(direction):
         offsets=position_offset.offsets,
     )
     if direction == "asc":
-        assert position_offset == ([3], [3])
+        assert position_offset == ([3, 1, 0], [3, 1, 0])
     else:
-        assert position_offset == ([1], [5])
+        assert position_offset == ([1, 0, 0], [5, 1, 1])
         position_offset[1][0] = 0
-    assert timeline3 == []
+        position_offset[1][1] = 0
+    assert timeline3 == timeline3_init
     # overlapping
     position_offset = tm.ordered_insert(
         Event1(start=dt(2024, 1, 7), stop=dt(2024, 1, 12)),
@@ -314,9 +315,9 @@ def test_ordered_insert_basic(direction):
         offset=position_offset,
     )
     if direction == "asc":
-        assert position_offset == ([5], [5])
+        assert position_offset == ([5, 2, 0], [5, 2, 0])
     else:
-        assert position_offset == ([5], [2])
+        assert position_offset == ([5, 1, 0], [2, 1, 1])
         position_offset[1][0] = 0
 
 
