@@ -4,7 +4,7 @@ from dataclasses import dataclass, field
 from datetime import datetime as dt
 from enum import IntEnum
 from functools import wraps
-from typing import Any, ClassVar, Literal, Protocol, Self, TypedDict, cast, dataclass_transform
+from typing import TYPE_CHECKING, Any, ClassVar, Literal, Protocol, Self, TypedDict, cast, dataclass_transform
 
 
 class SnapshotType(IntEnum):
@@ -59,8 +59,20 @@ def extract_snapshot_data(
     return (data, snapshot_for, snap_type)
 
 
+if TYPE_CHECKING:
+
+    class _BaseTMSnapshot(SnapshotObject, ABC):
+        pass
+
+else:
+    # otherwise we end with an inconsistent inheritance order e.g. with edgy
+
+    class _BaseTMSnapshot(ABC):  # noqa
+        pass
+
+
 @dataclass_transform(field_specifiers=(TMField,), kw_only_default=True)
-class BaseTMSnapshot(SnapshotObject, ABC):
+class BaseTMSnapshot(_BaseTMSnapshot):
     model_type: str
     _snapshot_accessors_wrapped: ClassVar[bool] = False
     managed: set[str]

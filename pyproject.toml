@@ -56,9 +56,10 @@ ignore= ["FA100"]
 
 [tool.hatch.envs.default]
 installer = "uv"
+extra-dependencies = ["faker", "edgy"]
 
 [tool.hatch.envs.hatch-test]
-extra-dependencies = ["faker", "edgy[sqlite]"]
+extra-dependencies = ["faker", "edgy[sqlite,test]", "pytest-anyio"]
 installer = "uv"
 
 [tool.hatch.envs.hatch-static-analysis]

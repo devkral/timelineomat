@@ -134,7 +134,7 @@ def extract_tuple_from_event(
     return TimeRangeTuple(start=start, stop=stop)
 
 
-def _array_window(array: Sequence[Event], offset, direction: Literal["asc", "desc"]):
+def _array_window(array: Sequence[Event], offset: Offset, direction: Literal["asc", "desc"]):
     length = len(array)
     if direction == "asc":
         for pos in range(offset, length):
@@ -333,7 +333,7 @@ def _ordered_insert(
 
 
 class _ordered_insert_kwargs(TypedDict, total=False):
-    offsets: Sequence[Offset] | None
+    offsets: Sequence[Offset | None | Literal[0]] | None
     no_update_timelines: set[int] | None
     start_extractor: Extractor
     stop_extractor: Extractor
@@ -344,7 +344,7 @@ class _ordered_insert_kwargs(TypedDict, total=False):
 def ordered_insert(
     event: Event,
     *timelines: Sequence[Event],
-    offsets: Sequence[Offset] | None = None,
+    offsets: Sequence[Offset | None | Literal[0]] | None = None,
     no_update_timelines: set[int] | None = None,
     start_extractor: Extractor = "start",
     stop_extractor: Extractor = "stop",
@@ -369,7 +369,7 @@ def ordered_insert(
                 MutableSequence[Event],
                 timeline,
             ),
-            offset=cast(Offset, 0) if offsets is None else offsets[count],
+            offset=cast(Offset, 0) if offsets is None else (offsets[count] or cast(Offset, 0)),
             direction=direction,
             fallback_timezone=fallback_timezone,
             no_insert=False if no_update_timelines is None else count in no_update_timelines,
@@ -385,7 +385,7 @@ def ordered_insert(
 
 
 class _streamline_ordered_insert_kwargs(_streamline_event_kwargs):
-    offsets: Sequence[Offset] | None
+    offsets: Sequence[Offset | None | Literal[0]] | None
     no_update_timelines: set[int] | None
     direction: Literal["asc", "desc"]
 
@@ -394,7 +394,7 @@ def streamlined_ordered_insert(
     event: Event,
     *timelines: Sequence[Event],
     filter_fn: FilterFunction | None = None,
-    offsets: Sequence[Offset] | None = None,
+    offsets: Sequence[Offset | None | Literal[0]] | None = None,
     no_update_timelines: set[int] | None = None,
     direction: Literal["asc", "desc"] = "asc",
     start_extractor: Extractor = "start",
@@ -421,7 +421,9 @@ def streamlined_ordered_insert(
         streamline_event(
             event,
             *(
-                _array_window(timeline, 0 if offsets is None else offsets[count], direction)
+                _array_window(
+                    timeline, cast(Offset, 0) if offsets is None else (offsets[count] or cast(Offset, 0)), direction
+                )
                 for count, timeline in enumerate(timelines)
             ),
             start_extractor=start_extractor,
@@ -552,6 +554,7 @@ class TimelineOMat:
             *timelines,
             no_update_timelines=kwargs.get("no_update_timelines", self.no_update_timelines),
             offsets=kwargs.get("offsets"),
+            occlusions=kwargs.get("occlusions"),
             start_extractor=kwargs.get("start_extractor", self.start_extractor),
             stop_extractor=kwargs.get("stop_extractor", self.stop_extractor),
             direction=kwargs.get("direction", self.direction),
