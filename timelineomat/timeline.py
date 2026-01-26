@@ -206,9 +206,9 @@ def _streamline_event_times(
         # existing event is within this event, we need to cut or raise
         if start < ev_start and stop > ev_stop:
             assert start < stop
-            # split iterator
+            # split iterator, if timeline is a tee object, there is already an optimization
             timeline, remaining = tee(timeline)
-            start, stop = cut_handler(TimeRangeTuple(start, stop), orig_tuple, remaining)
+            start, stop = cut_handler(TimeRangeTuple(start, stop), orig_tuple, chain([ev], remaining))
         # current event is at the end of an existing event overlapping
         if ev_start <= start and ev_stop > start:
             start = ev_stop

@@ -225,10 +225,42 @@ def test_handle_timestamps():
         Event1(start=dt(2024, 3, 4), stop=dt(2024, 3, 8)),
     ]
     ev = Event1(start=dt(2024, 3, 2), stop=dt(2024, 3, 5))
-    result = timelineomat.streamlined_ordered_insert(ev, events, direction="desc")
+    # fake insert
+    result = timelineomat.streamlined_ordered_insert(ev, events, direction="desc", no_update_timelines={0})
     assert ev.stop == dt(2024, 3, 4)
     assert result.positions == [1]
     assert result.offsets == [2]
+    assert len(events) == 3
+    # let it raise (cut skip)
+    with pytest.raises(timelineomat.SkipEvent):
+        timelineomat.streamlined_ordered_insert(Event1(start=dt(2024, 3, 2), stop=dt(2024, 3, 5)), events)
+    # insert it for real
+    timelineomat.ordered_insert(ev, events)
+    assert events[result.positions[0]] is ev
+
+
+def test_handle_timestamp_cut_handle():
+    events = [
+        Event1(start=dt(2024, 3, 1), stop=dt(2024, 3, 1)),
+        Event1(start=dt(2024, 3, 2), stop=dt(2024, 3, 2)),
+        Event1(start=dt(2024, 3, 4), stop=dt(2024, 3, 4)),
+        Event1(start=dt(2024, 3, 7), stop=dt(2024, 3, 7)),
+        Event1(start=dt(2024, 3, 8), stop=dt(2024, 3, 8)),
+    ]
+    ev = Event1(start=dt(2024, 3, 2), stop=dt(2024, 3, 5))
+
+    def cut_handler(new_tup, orig_tup, remaining):
+        remaining = list(remaining)
+        assert len(remaining) == 3
+        assert remaining[0] == events[2]
+        # cut on remaining[0]
+        return (new_tup.start, remaining[0].start)
+
+    tm = timelineomat.TimelineOMat(direction="desc", cut_handler=cut_handler)
+    result = tm.streamlined_ordered_insert(ev, events)
+    assert ev.stop == dt(2024, 3, 4)
+    assert result.positions == [2]
+    assert result.offsets == [3]
 
 
 def test_result():
@@ -353,7 +385,8 @@ def test_ordered_insert_multiline(direction):
     if direction == "asc":
         assert position_offset == ([5, 2, 0], [5, 2, 0])
     else:
-        assert position_offset == ([5, 1, 0], [2, 1, 1])
+        # pass empty elements
+        assert position_offset == ([6, 1, 0], [1, 1, 1])
         position_offset[1][0] = 0
 
 
