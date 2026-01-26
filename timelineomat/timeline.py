@@ -11,28 +11,29 @@ __all__ = [
     "TimeRangeTuple",
 ]
 
-from collections.abc import Callable, Iterable, MutableSequence, Sequence
+from collections.abc import Callable, Iterable, Iterator, MutableSequence, Sequence
 from datetime import datetime as dt
 from datetime import timezone as tz
 from functools import lru_cache
-from itertools import chain
-from typing import Any, Literal, NamedTuple, NewType, TypedDict, TypeVar, Unpack, cast
+from itertools import chain, tee
+from typing import Literal, NamedTuple, NewType, TypedDict, TypeVar, Unpack, cast
+
+
+class TimeRangeTuple(NamedTuple):
+    start: dt
+    stop: dt
+
 
 Event = TypeVar("Event")
 Offset = NewType("Offset", int)
 Position = NewType("Position", int)
 ExtractionResult = dt | float | int | str
 FilterFunction = Callable[[Event], bool]
+CutHandler = Callable[[TimeRangeTuple, TimeRangeTuple, Iterator[Event]], TimeRangeTuple]
 CallableExtractor = Callable[[Event], ExtractionResult]
 Extractor = str | CallableExtractor
 CallableSetter = Callable[[Event, dt], None]
 Setter = str | CallableSetter
-_T_kwargs = TypeVar("_T_kwargs")
-
-
-class TimeRangeTuple(NamedTuple):
-    start: dt
-    stop: dt
 
 
 class PositionsOffsetsTuple(NamedTuple):
@@ -45,6 +46,10 @@ class SkipEvent(BaseException):
 
 
 class SkipInvalidEvent(SkipEvent):
+    pass
+
+
+class SkipEmptyEvent(SkipEvent):
     pass
 
 
@@ -62,7 +67,10 @@ class NoCallAllowedError(Exception):
 
 # old name
 NewTimesResult = TimeRangeTuple
-_empty: frozenset[Any] = frozenset()
+
+
+def default_cut_handler(new: TimeRangeTuple, orig: TimeRangeTuple, remaining: Iterator[Event]) -> TimeRangeTuple:
+    raise SkipEvent("Noop - don't handle cut")
 
 
 def create_extractor(extractor: Extractor) -> CallableExtractor:
@@ -80,6 +88,7 @@ def create_extractor(extractor: Extractor) -> CallableExtractor:
     return _extractor
 
 
+# for allowing chaining in higher code levels, expose disallow_*
 def create_setter(
     setter: Setter,
     *,
@@ -88,11 +97,11 @@ def create_setter(
 ) -> CallableSetter:
     if not isinstance(setter, str):
         if disallow_call_instant:
-            raise NoCallAllowedError("extractor is not a string and no explicit setter set")
+            raise NoCallAllowedError("extractor is not a string and no setter is set")
         if disallow_call:
 
             def _setter(event: Event, value: dt) -> None:  # noqa: RET505
-                raise NoCallAllowedError("extractor is not a string and no explicit setter set")
+                raise NoCallAllowedError("extractor is not a string and no setter is set")
 
             return _setter
         return setter
@@ -123,14 +132,20 @@ def handle_result(result: ExtractionResult, fallback_timezone: tz | None = None)
 
 def extract_tuple_from_event(
     event: Event,
+    *,
     start_extractor: CallableExtractor,
     stop_extractor: CallableExtractor,
     fallback_timezone: tz | None = None,
+    ensure_timespan: bool = False,
 ) -> TimeRangeTuple:
     start = handle_result(start_extractor(event), fallback_timezone=fallback_timezone)
     stop = handle_result(stop_extractor(event), fallback_timezone=fallback_timezone)
-    if stop <= start:
-        raise SkipInvalidEvent("duration <= 0")
+
+    if stop < start:
+        raise SkipInvalidEvent("duration of the event is < 0")
+    if ensure_timespan and stop == start:
+        raise SkipEmptyEvent("duration of the event is = 0")
+
     return TimeRangeTuple(start=start, stop=stop)
 
 
@@ -146,31 +161,62 @@ def _array_window(array: Sequence[Event], offset: Offset, direction: Literal["as
 
 def _streamline_event_times(
     event: Event,
-    timeline: Iterable[Event],
+    timeline: Iterator[Event] | None,
+    cut_handler: CutHandler,
     start_extractor: Extractor = "start",
     stop_extractor: Extractor = "stop",
+    ensure_timespan: bool = False,
     filter_fn: FilterFunction | None = None,
     fallback_timezone: tz | None = None,
 ) -> tuple[TimeRangeTuple, TimeRangeTuple]:
     start_extractor = create_extractor(start_extractor)
     stop_extractor = create_extractor(stop_extractor)
-    start, stop = orig_tuple = extract_tuple_from_event(event, start_extractor, stop_extractor, fallback_timezone)
+    start, stop = orig_tuple = extract_tuple_from_event(
+        event,
+        start_extractor=start_extractor,
+        stop_extractor=stop_extractor,
+        fallback_timezone=fallback_timezone,
+        ensure_timespan=ensure_timespan,
+    )
     if not timeline:
         return orig_tuple, orig_tuple
-    for ev in timeline:
+    is_initial_empty = start == stop
+    while True:
+        try:
+            ev = next(timeline)
+        except StopIteration:
+            break
+        # only check events which are not filtered
         if filter_fn and not filter_fn(ev):
             continue
+        # get event time tuple
         try:
-            ev_start, ev_stop = extract_tuple_from_event(ev, start_extractor, stop_extractor, fallback_timezone)
+            ev_start, ev_stop = extract_tuple_from_event(
+                ev,
+                start_extractor=start_extractor,
+                stop_extractor=stop_extractor,
+                fallback_timezone=fallback_timezone,
+                ensure_timespan=False,
+            )
         except SkipEvent:
             continue
+        # current event is within an existing event
         if ev_start <= start and ev_stop >= stop:
             raise SkipOccludedEvent(original=orig_tuple)
+        # existing event is within this event, we need to cut or raise
+        if start < ev_start and stop > ev_stop:
+            assert start < stop
+            # split iterator
+            timeline, remaining = tee(timeline)
+            start, stop = cut_handler(TimeRangeTuple(start, stop), orig_tuple, remaining)
+        # current event is at the end of an existing event overlapping
         if ev_start <= start and ev_stop > start:
             start = ev_stop
+        # current event is at the start of an existing event overlapping
         if ev_start < stop and ev_stop >= stop:
             stop = ev_start
-        if stop <= start:
+        # check if there is still a valid timespan left after if not initial empty
+        if not is_initial_empty and stop <= start:
             raise SkipOccludedEvent(original=orig_tuple)
     return TimeRangeTuple(start=start, stop=stop), orig_tuple
 
@@ -184,6 +230,8 @@ class _streamline_event_times_kwargs(_streamline_event_base_kwargs):
     occlusions: list[TimeRangeTuple] | None
     start_extractor: Extractor
     stop_extractor: Extractor
+    ensure_timespan: bool
+    cut_handler: CutHandler
 
 
 def streamline_event_times(
@@ -192,14 +240,19 @@ def streamline_event_times(
     occlusions: list[TimeRangeTuple] | None = None,
     start_extractor: Extractor = "start",
     stop_extractor: Extractor = "stop",
+    ensure_timespan: bool = False,
+    cut_handler: CutHandler = default_cut_handler,
     **kwargs: Unpack[_streamline_event_base_kwargs],
 ) -> TimeRangeTuple:
     try:
         new_tuple, orig_tuple = _streamline_event_times(
             event,
-            chain.from_iterable(timelines) if timelines else _empty,
+            # None will trigger a shortcut
+            chain.from_iterable(timelines) if timelines else None,
             start_extractor=start_extractor,
             stop_extractor=stop_extractor,
+            ensure_timespan=ensure_timespan,
+            cut_handler=cut_handler,
             **kwargs,
         )
     except SkipOccludedEvent as exc:
@@ -220,6 +273,8 @@ class _streamline_event_kwargs(_streamline_event_base_kwargs):
     start_setter: Setter | None
     stop_setter: Setter | None
     occlusions: list[TimeRangeTuple] | None
+    ensure_timespan: bool
+    cut_handler: CutHandler
 
 
 def streamline_event(
@@ -230,6 +285,8 @@ def streamline_event(
     start_setter: Setter | None = None,
     stop_setter: Setter | None = None,
     occlusions: list[TimeRangeTuple] | None = None,
+    ensure_timespan: bool = False,
+    cut_handler: CutHandler = default_cut_handler,
     **kwargs: Unpack[_streamline_event_base_kwargs],
 ) -> Event:
     if not timelines:
@@ -250,6 +307,8 @@ def streamline_event(
         start_extractor=start_extractor,
         stop_extractor=stop_extractor,
         occlusions=occlusions,
+        ensure_timespan=ensure_timespan,
+        cut_handler=cut_handler,
         **kwargs,
     )
     start_setter(event, new_tuple.start)
@@ -277,7 +336,16 @@ def transform_events_to_times(
         if filter_fn and not filter_fn(ev):
             continue
         try:
-            retval = (extract_tuple_from_event(ev, start_extractor, stop_extractor, fallback_timezone), ev)
+            retval = (
+                extract_tuple_from_event(
+                    ev,
+                    start_extractor=start_extractor,
+                    stop_extractor=stop_extractor,
+                    fallback_timezone=fallback_timezone,
+                    ensure_timespan=False,
+                ),
+                ev,
+            )
             yield retval
         except SkipEvent:
             continue
@@ -307,7 +375,14 @@ def _ordered_insert(
             last_pos = position
         ev = timeline[position]
         try:
-            ev_times = extract_tuple_from_event(ev, start_extractor, stop_extractor, fallback_timezone)
+            ev_times = extract_tuple_from_event(
+                ev,
+                start_extractor=start_extractor,
+                stop_extractor=stop_extractor,
+                fallback_timezone=fallback_timezone,
+                # consider empty events
+                ensure_timespan=False,
+            )
         except SkipEvent:
             last_pos = position
             continue
@@ -317,7 +392,7 @@ def _ordered_insert(
                     timeline.insert(position, event)
                 return no_insert, cast(Position, position)
         else:
-            if ev_times < event_times:
+            if (ev_times[1], ev_times[0]) < (event_times[1], ev_times[0]):
                 if not no_insert:
                     timeline.insert(cast(int, last_pos), event)
                 return no_insert, cast(Position, last_pos)
@@ -339,6 +414,7 @@ class _ordered_insert_kwargs(TypedDict, total=False):
     stop_extractor: Extractor
     fallback_timezone: tz | None
     direction: Literal["asc", "desc"]
+    ensure_timespan: bool
 
 
 def ordered_insert(
@@ -350,6 +426,7 @@ def ordered_insert(
     stop_extractor: Extractor = "stop",
     fallback_timezone: tz | None = None,
     direction: Literal["asc", "desc"] = "asc",
+    ensure_timespan: bool = False,
 ) -> PositionsOffsetsTuple:
     start_extractor = create_extractor(start_extractor)
     stop_extractor = create_extractor(stop_extractor)
@@ -360,6 +437,7 @@ def ordered_insert(
         start_extractor=start_extractor,
         stop_extractor=stop_extractor,
         fallback_timezone=fallback_timezone,
+        ensure_timespan=ensure_timespan,
     )
     for count, timeline in enumerate(timelines):
         no_insert, position = _ordered_insert(
@@ -388,6 +466,7 @@ class _streamline_ordered_insert_kwargs(_streamline_event_kwargs):
     offsets: Sequence[Offset | None | Literal[0]] | None
     no_update_timelines: set[int] | None
     direction: Literal["asc", "desc"]
+    cut_direction: Literal["asc", "desc", "occlusion"] | None
 
 
 def streamlined_ordered_insert(
@@ -397,12 +476,14 @@ def streamlined_ordered_insert(
     offsets: Sequence[Offset | None | Literal[0]] | None = None,
     no_update_timelines: set[int] | None = None,
     direction: Literal["asc", "desc"] = "asc",
+    cut_handler: CutHandler = default_cut_handler,
     start_extractor: Extractor = "start",
     stop_extractor: Extractor = "stop",
     start_setter: Setter | None = None,
     stop_setter: Setter | None = None,
     fallback_timezone: tz | None = None,
     occlusions: list[TimeRangeTuple] | None = None,
+    ensure_timespan: bool = False,
 ) -> PositionsOffsetsTuple:
     if start_setter is not None:
         start_setter = create_setter(start_setter)
@@ -433,6 +514,8 @@ def streamlined_ordered_insert(
             filter_fn=filter_fn,
             occlusions=occlusions,
             fallback_timezone=fallback_timezone,
+            ensure_timespan=ensure_timespan,
+            cut_handler=cut_handler,
         ),
         *timelines,
         no_update_timelines=no_update_timelines,
@@ -452,6 +535,9 @@ class TimelineOMat:
     no_update_timelines: set[int] | None
     filter_fn: FilterFunction | None
     fallback_timezone: tz | None
+    direction: Literal["asc", "desc"]
+    cut_handler: CutHandler
+    ensure_timespan: bool
 
     def __init__(
         self,
@@ -465,6 +551,8 @@ class TimelineOMat:
         fallback_timezone: tz | None = None,
         # for ordered_insert
         direction: Literal["asc", "desc"] = "asc",
+        cut_handler: CutHandler = default_cut_handler,
+        ensure_timespan: bool = False,
     ):
         self.start_extractor = create_extractor(start_extractor)
         self.stop_extractor = create_extractor(stop_extractor)
@@ -472,15 +560,17 @@ class TimelineOMat:
         self.filter_fn = filter_fn
         self.fallback_timezone = fallback_timezone
         self.direction = direction
+        self.cut_handler = cut_handler
+        self.ensure_timespan = ensure_timespan
         if start_setter is not None:
             self.start_setter = create_setter(start_setter)
         else:
-            # because of disallow_call_instant we correctly raise for non-strings
+            # because of disallow_call_instant we correctly raise for non-strings when called
             self.start_setter = create_setter(cast(str, start_extractor), disallow_call=True)
         if stop_setter is not None:
             self.stop_setter = create_setter(stop_setter)
         else:
-            # because of disallow_call_instant we correctly raise for non-strings
+            # because of disallow_call_instant we correctly raise for non-strings when called
             self.stop_setter = create_setter(cast(str, stop_extractor), disallow_call=True)
 
     def streamline_event_times(
@@ -489,11 +579,13 @@ class TimelineOMat:
         return streamline_event_times(
             event,
             *timelines,
+            occlusions=kwargs.get("occlusions"),
+            cut_handler=kwargs.get("cut_handler", self.cut_handler),
+            ensure_timespan=kwargs.get("ensure_timespan", self.ensure_timespan),
             start_extractor=kwargs.get("start_extractor", self.start_extractor),
             stop_extractor=kwargs.get("stop_extractor", self.stop_extractor),
             filter_fn=kwargs.get("filter_fn", self.filter_fn),
             fallback_timezone=kwargs.get("fallback_timezone", self.fallback_timezone),
-            occlusions=kwargs.get("occlusions"),
         )
 
     def streamline_event(
@@ -504,13 +596,15 @@ class TimelineOMat:
         return streamline_event(
             event,
             *timelines,
+            occlusions=kwargs.get("occlusions"),
+            cut_handler=kwargs.get("cut_handler", self.cut_handler),
+            ensure_timespan=kwargs.get("ensure_timespan", self.ensure_timespan),
             start_extractor=kwargs.get("start_extractor", self.start_extractor),
             stop_extractor=kwargs.get("stop_extractor", self.stop_extractor),
             filter_fn=kwargs.get("filter_fn", self.filter_fn),
             fallback_timezone=kwargs.get("fallback_timezone", self.fallback_timezone),
             start_setter=kwargs.get("start_setter", self.start_setter),
             stop_setter=kwargs.get("stop_setter", self.stop_setter),
-            occlusions=kwargs.get("occlusions"),
         )
 
     def transform_events_to_times(
@@ -535,6 +629,7 @@ class TimelineOMat:
         return ordered_insert(
             event,
             *timelines,
+            ensure_timespan=kwargs.get("ensure_timespan", self.ensure_timespan),
             no_update_timelines=kwargs.get("no_update_timelines", self.no_update_timelines),
             offsets=kwargs.get("offsets"),
             start_extractor=kwargs.get("start_extractor", self.start_extractor),
@@ -555,6 +650,8 @@ class TimelineOMat:
             no_update_timelines=kwargs.get("no_update_timelines", self.no_update_timelines),
             offsets=kwargs.get("offsets"),
             occlusions=kwargs.get("occlusions"),
+            cut_handler=kwargs.get("cut_handler", self.cut_handler),
+            ensure_timespan=kwargs.get("ensure_timespan", self.ensure_timespan),
             start_extractor=kwargs.get("start_extractor", self.start_extractor),
             stop_extractor=kwargs.get("stop_extractor", self.stop_extractor),
             direction=kwargs.get("direction", self.direction),

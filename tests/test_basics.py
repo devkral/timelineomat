@@ -179,9 +179,32 @@ def test_dict2_timelineomat():
         last_event = ev
 
 
+def test_event_empty():
+    events = []
+    with pytest.raises(timelineomat.SkipEmptyEvent):
+        timelineomat.streamline_event_times(
+            Event1(start=dt(2024, 3, 2), stop=dt(2024, 3, 2)), events, ensure_timespan=True
+        )
+    timelineomat.streamline_event_times(
+        Event1(start=dt(2024, 3, 2), stop=dt(2024, 3, 2)), events, ensure_timespan=False
+    )
+
+
+def test_event_empty_collision_raises():
+    events = [Event1(start=dt(2024, 3, 2), stop=dt(2024, 3, 2))]
+    with pytest.raises(timelineomat.SkipOccludedEvent):
+        timelineomat.streamline_event_times(Event1(start=dt(2024, 3, 2), stop=dt(2024, 3, 2)), events)
+
+
+def test_event_getting_empty_raises():
+    events = [Event1(start=dt(2024, 2, 1), stop=dt(2024, 3, 2)), Event1(start=dt(2024, 3, 2), stop=dt(2024, 3, 3))]
+    with pytest.raises(timelineomat.SkipOccludedEvent):
+        timelineomat.streamline_event_times(Event1(start=dt(2024, 3, 1), stop=dt(2024, 3, 2, 1)), events)
+
+
 def test_invalid():
     events = []
-    with pytest.raises(timelineomat.SkipEvent):
+    with pytest.raises(timelineomat.SkipInvalidEvent):
         timelineomat.streamline_event_times(Event1(start=dt(2024, 3, 2), stop=dt(2024, 2, 1)), events)
 
 
@@ -193,6 +216,19 @@ def test_event_within_event():
         timelineomat.streamline_event_times(new_event, events, occlusions=occlusions)
     assert new_event.start == occlusions[0].start
     assert new_event.stop == occlusions[0].stop
+
+
+def test_handle_timestamps():
+    events = [
+        Event1(start=dt(2024, 3, 2), stop=dt(2024, 3, 2)),
+        Event1(start=dt(2024, 3, 4), stop=dt(2024, 3, 4)),
+        Event1(start=dt(2024, 3, 4), stop=dt(2024, 3, 8)),
+    ]
+    ev = Event1(start=dt(2024, 3, 2), stop=dt(2024, 3, 5))
+    result = timelineomat.streamlined_ordered_insert(ev, events, direction="desc")
+    assert ev.stop == dt(2024, 3, 4)
+    assert result.positions == [1]
+    assert result.offsets == [2]
 
 
 def test_result():

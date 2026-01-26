@@ -14,7 +14,7 @@ There are 5 different functions which also exist as methods of the TimelineOMat 
 - streamline_event: uses streamline_event_times plus setters to update the event and returns event
 - transform_events_to_times: transforms timelines to TimeRangeTuple for e.g. databases
 - ordered_insert: insert an event in a timeline so it stays ordered. By default an offset is returned. It can be used in case of ordered inserts to improve the performance. Returned is a (positions, offsets) tuple (PositionsOffsetsTuple)
-- streamline_ordered_insert: combined functions of ordered_insert and streamline_event.
+- streamline_ordered_insert: combines functions of ordered_insert and streamline_event. More efficient than both alone because when using offsets the search area is reduced as well.
 
 ordered_insert also takes the parameters direction and offset (direction can be set on TimelineOMat). This allows performant inserts and collision checks.
 
@@ -89,6 +89,10 @@ fallback_timezone
 If set the timezone is used in case a naive datetime is encountered (in case of int, float, the timezone is always set).
 
 Supported are the regular timezones of python (timezone.utc or ZoneInfo).
+
+### `ensure_timespan`
+
+Ensure the inserted event or streamlined event times have a timespan.
 
 ###  TimelineOMat one-time overwrites
 

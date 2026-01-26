@@ -76,7 +76,7 @@ async def test_multiline_ordering():
     timeline2 = await Event.query.filter(timeline="tl2").order_by("start").distinct()
     timeline_save = []
     timeline_delete = []
-    async for event in Event.query.filter(timeline="tl1").order_by("start").distinct():
+    for event in await Event.query.filter(timeline="tl1").order_by("start").distinct():
         occlusions = []
         try:
             tm.streamlined_ordered_insert(event, timeline1, timeline2, no_update_timelines={1}, occlusions=occlusions)
@@ -84,6 +84,11 @@ async def test_multiline_ordering():
             timeline_delete.append(event.id)
             continue
         if occlusions:
+            if len(occlusions) == 1:
+                assert occlusions[0].stop <= event.start or occlusions[0].start >= event.stop
+            else:
+                assert occlusions[0].stop <= event.start and occlusions[1].start >= event.stop
+
             timeline_save.append(event)
     await Event.query.filter(id__in=timeline_delete).delete()
     if timeline_save:
@@ -98,7 +103,7 @@ async def test_multiline_ordering():
 
     last_stop = None
     # check ordering db
-    async for event in Event.query.filter(timeline="tl1").order_by("start"):
+    for event in await Event.query.filter(timeline="tl1").order_by("start"):
         if last_stop is not None:
             assert event.start >= last_stop
         assert event.start <= event.stop
