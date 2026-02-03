@@ -84,7 +84,7 @@ class _BaseSnapshotImplType(Protocol[_SnapshotImplReturnType]):
     def get_snapshot_impl(
         cls,
         *,
-        model_type: str,
+        content_specifier: str,
         after: dt | None,
         before: dt | None,
         start_snapshot: None | SnapshotTimelineEntry,
@@ -109,7 +109,7 @@ else:
 @dataclass_transform(field_specifiers=(TMField,), kw_only_default=True)
 class BaseTMSnapshot(_BaseTMSnapshot):
     _snapshot_accessors_wrapped: ClassVar[bool] = False
-    model_type: str
+    content_specifier: str
     managed: set[str]
     _snapshots: list[SnapshotTimelineEntry] | None = None
 
@@ -118,7 +118,7 @@ class BaseTMSnapshot(_BaseTMSnapshot):
     def get_snapshot_impl(
         cls,
         *,
-        model_type: str,
+        content_specifier: str,
         after: dt | None,
         before: dt | None,
         start_snapshot: None | SnapshotTimelineEntry,
@@ -127,7 +127,7 @@ class BaseTMSnapshot(_BaseTMSnapshot):
         pass
 
     @classmethod
-    def process_snapshot_model_type(cls, model_type: str | None) -> str:
+    def process_snapshot_content_specifier(cls, content_specifier: str | None) -> str:
         """
         For customizing the naming logic and processing, like escaping.
 
@@ -135,13 +135,13 @@ class BaseTMSnapshot(_BaseTMSnapshot):
 
         By default None and "" are handled equally but this logic is overwritable.
         """
-        return model_type or cls.__name__
+        return content_specifier or cls.__name__
 
     @overload
     @classmethod
     def get_snapshot(
         cls: type[_AsyncSnapshotImplType],
-        model_type: str | None = None,
+        content_specifier: str | None = None,
         *,
         after: dt | None = None,
         before: dt | None = None,
@@ -153,7 +153,7 @@ class BaseTMSnapshot(_BaseTMSnapshot):
     @classmethod
     def get_snapshot(
         cls: type[_SyncSnapshotImplType],
-        model_type: str | None = None,
+        content_specifier: str | None = None,
         *,
         after: dt | None = None,
         before: dt | None = None,
@@ -164,14 +164,14 @@ class BaseTMSnapshot(_BaseTMSnapshot):
     @classmethod
     def get_snapshot(
         cls: type[_SyncSnapshotImplType | _AsyncSnapshotImplType],
-        model_type: str | None = None,
+        content_specifier: str | None = None,
         *,
         after: dt | None = None,
         before: dt | None = None,
         start_snapshot: None | SnapshotTimelineEntry = None,
         **kwargs: _SnapshotImplKwargs,
     ) -> _UnpackedSnapImplReturnType | None | Awaitable[_UnpackedSnapImplReturnType | None]:
-        model_type = cast(BaseTMSnapshot, cls).process_snapshot_model_type(model_type)
+        content_specifier = cast(BaseTMSnapshot, cls).process_snapshot_content_specifier(content_specifier)
         if start_snapshot is not None:
             snap_for, snap_type = extract_snapshot_data(start_snapshot)[1:]
             if snap_type not in {
@@ -183,14 +183,16 @@ class BaseTMSnapshot(_BaseTMSnapshot):
             if after is None or after < snap_for:
                 after = snap_for
             if isinstance(start_snapshot, dict):
-                model_type_start = start_snapshot.get("model_type")
+                content_specifier_start = start_snapshot.get("content_specifier")
             else:
-                model_type_start = getattr(start_snapshot, "model_type", None)
+                content_specifier_start = getattr(start_snapshot, "content_specifier", None)
             # if found compare against the model type of start_snapshot
-            if model_type_start:
-                assert model_type_start == model_type, "`start_snapshot` and `model_type` doesn't match."
+            if content_specifier_start:
+                assert content_specifier_start == content_specifier, (
+                    "`start_snapshot` and `content_specifier` doesn't match."
+                )
         return cls.get_snapshot_impl(
-            model_type=model_type, after=after, before=before, start_snapshot=start_snapshot, **kwargs
+            content_specifier=content_specifier, after=after, before=before, start_snapshot=start_snapshot, **kwargs
         )
 
     def __init_subclass__(cls, wrap_tm_accessors: bool = True, **kwargs):

@@ -14,7 +14,7 @@ class SnapshotImplementation(edgy.Model):
     data = edgy.fields.JSONField(default=dict)
     snapshot_for: dt = edgy.fields.DateTimeField()
     snapshot_type = edgy.fields.CharField(max_length=10)
-    model_type = edgy.fields.CharField(max_length=10)
+    content_specifier = edgy.fields.CharField(max_length=10)
 
     class Meta:
         registry = models
@@ -22,12 +22,12 @@ class SnapshotImplementation(edgy.Model):
 
 class Snapshot(BaseTMSnapshot):
     @classmethod
-    async def get_snapshot_impl(cls, *, model_type, after=None, before=None, start_snapshot=None):
+    async def get_snapshot_impl(cls, *, content_specifier, after=None, before=None, start_snapshot=None):
         snapshots = [start_snapshot] if start_snapshot is not None else []
         first_snapshot_data = None
         current_snapshot_data = {}
         snapshot_type = SnapshotType.temporary
-        query = SnapshotImplementation.query.filter(model_type=model_type).order_by("snapshot_for")
+        query = SnapshotImplementation.query.filter(content_specifier=content_specifier).order_by("snapshot_for")
         if before is not None:
             query = query.filter(snapshot_for__lt=before)
         if after is None:
@@ -78,8 +78,8 @@ class Snapshot(BaseTMSnapshot):
 
     @classmethod
     def get_snapshot(cls, **kwargs):
-        assert kwargs.pop("model_type") is None
-        # model_type = cls.__name__
+        assert kwargs.pop("content_specifier") is None
+        # content_specifier = cls.__name__
         return super().get_snapshot(**kwargs)
 
 

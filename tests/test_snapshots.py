@@ -23,7 +23,7 @@ async def asyncify(inp):
 @dataclass(kw_only=True)
 class DummySnapshot(BaseTMSnapshot):
     snapshot_for: dt
-    model_type: str
+    content_specifier: str
     data: dict[str, Any] = field(default_factory=dict, init=False)
     managed: set[str] = field(default_factory=set, init=False)
     snapshot_type: SnapshotType
@@ -33,12 +33,12 @@ class DummySnapshot(BaseTMSnapshot):
     stringified_int: Any = TMField(serializer=str, deserializer=int)
 
     @classmethod
-    def get_snapshot_impl(cls, *, model_type, after, before, start_snapshot, shall_async=False):
+    def get_snapshot_impl(cls, *, content_specifier, after, before, start_snapshot, shall_async=False):
         snapshots = [start_snapshot] if start_snapshot is not None else []
         first_snapshot_data = None
         current_snapshot_data = {}
         snapshot_type = SnapshotType.temporary
-        for snap in globals()[model_type]:
+        for snap in globals()[content_specifier]:
             extracted, timepoint, snap_type = extract_snapshot_data(snap)
             if before is not None and timepoint >= before:
                 break
@@ -92,15 +92,15 @@ class DummySnapshot2(DummySnapshot):
         return super().get_snapshot(**kwargs)
 
     @classmethod
-    def process_snapshot_model_type(cls, model_type: str | None):
-        return model_type or "dummy_snapshots"
+    def process_snapshot_content_specifier(cls, content_specifier: str | None):
+        return content_specifier or "dummy_snapshots"
 
 
 dummy_snapshots = [
     DummySnapshot(
         snapshot_for=dt(year=2025, month=1, day=1),
         snapshot_type=SnapshotType.full,
-        model_type="DjangoContentType",
+        content_specifier="DjangoContentType",
         stay_same=obj1,
         stringified=1,
         stringified_int=8,
@@ -108,19 +108,19 @@ dummy_snapshots = [
     {
         "snapshot_for": dt(year=2025, month=1, day=2),
         "snapshot_type": SnapshotType.sparse,
-        "model_type": "DjangoContentType",
+        "content_specifier": "DjangoContentType",
         "stringified_int": 8,
     },
     {
         "snapshot_for": dt(year=2025, month=1, day=3),
         "snapshot_type": SnapshotType.sparse,
-        "model_type": "DjangoContentType",
+        "content_specifier": "DjangoContentType",
         "stringified": 9,
     },
     {
         "snapshot_for": dt(year=2025, month=1, day=4),
         "snapshot_type": SnapshotType.full,
-        "model_type": "DjangoContentType",
+        "content_specifier": "DjangoContentType",
         "stay_same": obj2,
         "stringified": 111,
         "stringified_int": 10,
@@ -132,7 +132,7 @@ dummy_snapshots2 = [
     {
         "snapshot_for": dt(year=2025, month=1, day=5),
         "snapshot_type": SnapshotType.sparse,
-        "model_type": "DjangoContentType",
+        "content_specifier": "DjangoContentType",
         "stringified": 2,
     },
 ]
@@ -144,7 +144,7 @@ def test_invalid_invocation():
     with pytest.raises(TypeError):
         DummySnapshot.get_snapshot(",", "foo")
     with pytest.raises(TypeError):
-        DummySnapshot.get_snapshot("foo", model_type="foo")
+        DummySnapshot.get_snapshot("foo", content_specifier="foo")
 
 
 def test_invalid_start_snapshot():
@@ -154,7 +154,7 @@ def test_invalid_start_snapshot():
             start_snapshot=DummySnapshot(
                 snapshot_for=dt(year=2025, month=1, day=1),
                 snapshot_type=SnapshotType.sparse,
-                model_type="DjangoContentType",
+                content_specifier="DjangoContentType",
                 stay_same=obj1,
                 stringified=1,
                 stringified_int=8,
@@ -167,7 +167,7 @@ def test_invalid_start_snapshot():
             start_snapshot={
                 "snapshot_for": dt(year=2025, month=1, day=1),
                 "snapshot_type": SnapshotType.sparse,
-                "model_type": "DjangoContentType",
+                "content_specifier": "DjangoContentType",
                 "stay_same": obj1,
                 "stringified": 1,
                 "stringified_int": 8,
@@ -177,8 +177,8 @@ def test_invalid_start_snapshot():
 
 def test_overwrite():
     assert isinstance(DummySnapshot2.get_snapshot(), DummySnapshot2)
-    assert isinstance(DummySnapshot2.get_snapshot(model_type="dummy_snapshots"), DummySnapshot2)
-    assert DummySnapshot2.get_snapshot(model_type="dummy_snapshots_empty") is None
+    assert isinstance(DummySnapshot2.get_snapshot(content_specifier="dummy_snapshots"), DummySnapshot2)
+    assert DummySnapshot2.get_snapshot(content_specifier="dummy_snapshots_empty") is None
 
 
 def test_empty():

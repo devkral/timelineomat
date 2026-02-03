@@ -13,7 +13,7 @@ database_query: Any = []
 @dataclass(kw_only=True)
 class ExampleSnapshot(BaseTMSnapshot):
     snapshot_for: dt
-    model_type: str
+    content_specifier: str
     data: dict[str, Any] = field(default_factory=dict, init=False)
     managed: set[str] = field(default_factory=set, init=False)
     snapshot_type: SnapshotType
@@ -21,15 +21,15 @@ class ExampleSnapshot(BaseTMSnapshot):
     snapshot_field = TMField()
 
     @classmethod
-    def process_snapshot_model_type(cls, model_type: str | None):
-        # optional, only required when model_types need a processing
-        return model_type or cls.__name__
+    def process_snapshot_content_specifier(cls, content_specifier: str | None):
+        # optional, only required when content_specifiers need a processing
+        return content_specifier or cls.__name__
 
     @classmethod
     def get_snapshot_impl(  # type: ignore
         cls,
         *,
-        model_type: str,
+        content_specifier: str,
         after: None | dt,
         before: None | dt,
         start_snapshot: None | SnapshotTimelineEntry,
