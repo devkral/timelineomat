@@ -1,13 +1,23 @@
+from __future__ import annotations
+
 from dataclasses import dataclass, field
 from datetime import datetime as dt
 from typing import Any
 
+import pytest
+
 from timelineomat import BaseTMSnapshot, SnapshotType, TMField, extract_snapshot_data
+
+pytestmark = pytest.mark.anyio
 
 obj1 = object()
 obj2 = object()
 obj3 = object()
 obj4 = object()
+
+
+async def asyncify(inp):
+    return inp
 
 
 @dataclass(kw_only=True)
@@ -23,7 +33,7 @@ class DummySnapshot(BaseTMSnapshot):
     stringified_int: Any = TMField(serializer=str, deserializer=int)
 
     @classmethod
-    def get_snapshot_impl(cls, *, model_type, after=None, before=None, start_snapshot=None):
+    def get_snapshot_impl(cls, *, model_type, after, before, start_snapshot, shall_async=False):
         snapshots = [start_snapshot] if start_snapshot is not None else []
         first_snapshot_data = None
         current_snapshot_data = {}
@@ -63,13 +73,27 @@ class DummySnapshot(BaseTMSnapshot):
         if first_snapshot_data is not None:
             snapshots.insert(0, first_snapshot_data)
         if not snapshots:
+            if shall_async:
+                return asyncify(None)
             return None
         instance = cls(
             snapshot_type=snapshot_type,
             **current_snapshot_data,
         )
         instance._snapshots = snapshots
+        if shall_async:
+            return asyncify(instance)
         return instance
+
+
+class DummySnapshot2(DummySnapshot):
+    @classmethod
+    def get_snapshot(cls, **kwargs):
+        return super().get_snapshot(**kwargs)
+
+    @classmethod
+    def process_snapshot_model_type(cls, model_type: str | None):
+        return model_type or "dummy_snapshots"
 
 
 dummy_snapshots = [
@@ -116,12 +140,63 @@ dummy_snapshots2 = [
 dummy_snapshots_empty: list[Any] = []
 
 
+def test_invalid_invocation():
+    with pytest.raises(TypeError):
+        DummySnapshot.get_snapshot(",", "foo")
+    with pytest.raises(TypeError):
+        DummySnapshot.get_snapshot("foo", model_type="foo")
+
+
+def test_invalid_start_snapshot():
+    with pytest.raises(ValueError):
+        DummySnapshot.get_snapshot(
+            "dummy_snapshots",
+            start_snapshot=DummySnapshot(
+                snapshot_for=dt(year=2025, month=1, day=1),
+                snapshot_type=SnapshotType.sparse,
+                model_type="DjangoContentType",
+                stay_same=obj1,
+                stringified=1,
+                stringified_int=8,
+            ),
+        )
+
+    with pytest.raises(ValueError):
+        DummySnapshot.get_snapshot(
+            "dummy_snapshots",
+            start_snapshot={
+                "snapshot_for": dt(year=2025, month=1, day=1),
+                "snapshot_type": SnapshotType.sparse,
+                "model_type": "DjangoContentType",
+                "stay_same": obj1,
+                "stringified": 1,
+                "stringified_int": 8,
+            },
+        )
+
+
+def test_overwrite():
+    assert isinstance(DummySnapshot2.get_snapshot(), DummySnapshot2)
+    assert isinstance(DummySnapshot2.get_snapshot(model_type="dummy_snapshots"), DummySnapshot2)
+    assert DummySnapshot2.get_snapshot(model_type="dummy_snapshots_empty") is None
+
+
 def test_empty():
     assert DummySnapshot.get_snapshot("dummy_snapshots_empty") is None
 
 
 def test_snapshot_unranged():
     snap = DummySnapshot.get_snapshot("dummy_snapshots")
+    assert snap.stringified_int == 10
+    assert snap.stringified == "111"
+    assert snap.stay_same is obj2
+    assert snap.snapshot_type == SnapshotType.full
+    assert snap.snapshot_for == dt(year=2025, month=1, day=4)
+    assert len(snap._snapshots) == 1
+
+
+async def test_async_arg():
+    snap = await DummySnapshot.get_snapshot("dummy_snapshots", shall_async=True)
     assert snap.stringified_int == 10
     assert snap.stringified == "111"
     assert snap.stay_same is obj2

@@ -1,55 +1,26 @@
-from dataclasses import dataclass, field
 from datetime import datetime as dt
-from typing import Any
 
 import edgy
 import pytest
-from edgy import Registry
-from edgy.testing.client import DatabaseTestClient
 
 from timelineomat import BaseTMSnapshot, SnapshotType, TMField, extract_snapshot_data
 
-database = DatabaseTestClient("sqlite:///test_db.sqlite", drop_database=True)
-models = Registry(database=edgy.Database(database, force_rollback=True))
+models = edgy.Registry(database=DB_URL)
 
 pytestmark = pytest.mark.anyio
 
 
-@pytest.fixture(autouse=True, scope="module")
-async def create_test_database():
-    # this creates and drops the database
-    async with database:
-        await models.create_all()
-        yield
-        await models.drop_all()
-
-
-@pytest.fixture(autouse=True, scope="function")
-async def rollback_transactions():
-    # this rolls back
-    async with models:
-        yield
-
-
 class SnapshotImplementation(edgy.Model):
-    data = edgy.JSONField(default=dict)
-    snapshot_for: dt = edgy.DateTimeField()
-    snapshot_type = edgy.CharField(max_length=10)
-    model_type = edgy.CharField(max_length=10)
+    data = edgy.fields.JSONField(default=dict)
+    snapshot_for: dt = edgy.fields.DateTimeField()
+    snapshot_type = edgy.fields.CharField(max_length=10)
+    model_type = edgy.fields.CharField(max_length=10)
 
     class Meta:
         registry = models
 
 
-# Note: not an edgy model
-@dataclass(kw_only=True)
 class Snapshot(BaseTMSnapshot):
-    snapshot_for: dt
-    data: dict[str, Any] = field(default_factory=dict, init=False)
-    # managed is extra
-    managed: set[str] = field(default_factory=set, init=False)
-    snapshot_type: SnapshotType
-
     @classmethod
     async def get_snapshot_impl(cls, *, model_type, after=None, before=None, start_snapshot=None):
         snapshots = [start_snapshot] if start_snapshot is not None else []
@@ -103,7 +74,6 @@ class Snapshot(BaseTMSnapshot):
             **current_snapshot_data,
         )
         instance._snapshots = snapshots
-
         return instance
 
     @classmethod
@@ -112,54 +82,7 @@ class Snapshot(BaseTMSnapshot):
         # model_type = cls.__name__
         return super().get_snapshot(**kwargs)
 
-    async def save(self):
-        data, snapshot_for, snap_type = extract_snapshot_data(self)
 
-        return await SnapshotImplementation(
-            data=data, snapshot_for=snapshot_for, snapshot_type=snap_type, model_type=type(self).__name__
-        )
-
-
-@dataclass(kw_only=True)
 class SnapshotSubtype1(Snapshot):
     stringified: str = TMField(serializer=str)  # type: ignore
     stringified_int: int = TMField(serializer=str, deserializer=int)  # type: ignore
-
-
-async def test_bad_invovation():
-    with pytest.raises(TypeError):
-        SnapshotSubtype1.get_snapshot("foo")
-    with pytest.raises(AssertionError):
-        SnapshotSubtype1.get_snapshot(model_type="foo")
-
-
-sample_snapshots_sub1 = [
-    {
-        "snapshot_for": dt(year=2025, month=1, day=2),
-        "snapshot_type": SnapshotType.full,
-        "stringified": 1,
-        "stringified_int": 7,
-    },
-    {
-        "snapshot_for": dt(year=2025, month=1, day=2),
-        "snapshot_type": SnapshotType.sparse,
-        "stringified_int": 8,
-    },
-    {
-        "snapshot_for": dt(year=2025, month=1, day=3),
-        "snapshot_type": SnapshotType.sparse,
-        "stringified": 9,
-    },
-    {
-        "snapshot_for": dt(year=2025, month=1, day=4),
-        "snapshot_type": SnapshotType.full,
-        "stringified": 111,
-        "stringified_int": 10,
-    },
-]
-
-
-async def test_basic():
-    for i in sample_snapshots_sub1:
-        impl = await SnapshotSubtype1(**i).save()
-        breakpoint()

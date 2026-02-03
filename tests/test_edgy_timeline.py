@@ -6,7 +6,6 @@ import edgy
 import pytest
 from edgy import Registry
 from edgy.testing.client import DatabaseTestClient
-from edgy.testing.factory import ModelFactory
 from faker import Faker
 
 import timelineomat
@@ -40,11 +39,6 @@ class Event(edgy.Model):
 
     class Meta:
         registry = models
-
-
-class EventFactory(ModelFactory):
-    class Meta:
-        model = Event
 
 
 def _generate_time_tuple(faker, start):

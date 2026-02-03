@@ -1,10 +1,24 @@
+from __future__ import annotations
+
 from abc import ABC, abstractmethod
-from collections.abc import Callable, MutableMapping
+from collections.abc import Awaitable, Callable, MutableMapping
 from dataclasses import dataclass, field
 from datetime import datetime as dt
 from enum import IntEnum
 from functools import wraps
-from typing import TYPE_CHECKING, Any, ClassVar, Literal, Protocol, Self, TypedDict, cast, dataclass_transform
+from typing import (
+    TYPE_CHECKING,
+    Any,
+    ClassVar,
+    Literal,
+    Protocol,
+    Self,
+    TypedDict,
+    TypeVar,
+    cast,
+    dataclass_transform,
+    overload,
+)
 
 
 class SnapshotType(IntEnum):
@@ -16,7 +30,7 @@ class SnapshotType(IntEnum):
 SnapshotTypeVariant = SnapshotType | Literal["sparse", "full", "temporary"]
 
 
-@dataclass(frozen=True)
+@dataclass(frozen=True, kw_only=True)
 class TMField:
     name: str | None = None
     serializer: Callable[[Any], Any] = field(default=lambda x: x)
@@ -59,6 +73,27 @@ def extract_snapshot_data(
     return (data, snapshot_for, snap_type)
 
 
+_SnapshotImplReturnType = TypeVar("_SnapshotImplReturnType", covariant=True)
+_SnapshotImplKwargs = TypeVar("_SnapshotImplKwargs")
+_UnpackedSnapImplReturnType = TypeVar("_UnpackedSnapImplReturnType", bound="BaseTMSnapshot")
+
+
+class _BaseSnapshotImplType(Protocol[_SnapshotImplReturnType]):
+    @classmethod
+    @abstractmethod
+    def get_snapshot_impl(
+        cls,
+        *,
+        model_type: str,
+        after: dt | None,
+        before: dt | None,
+        start_snapshot: None | SnapshotTimelineEntry,
+    ) -> _SnapshotImplReturnType: ...
+
+
+_SyncSnapshotImplType = _BaseSnapshotImplType[_UnpackedSnapImplReturnType | None]
+_AsyncSnapshotImplType = _BaseSnapshotImplType[Awaitable[_UnpackedSnapImplReturnType | None]]
+
 if TYPE_CHECKING:
 
     class _BaseTMSnapshot(SnapshotObject, ABC):
@@ -73,8 +108,8 @@ else:
 
 @dataclass_transform(field_specifiers=(TMField,), kw_only_default=True)
 class BaseTMSnapshot(_BaseTMSnapshot):
-    model_type: str
     _snapshot_accessors_wrapped: ClassVar[bool] = False
+    model_type: str
     managed: set[str]
     _snapshots: list[SnapshotTimelineEntry] | None = None
 
@@ -84,38 +119,76 @@ class BaseTMSnapshot(_BaseTMSnapshot):
         cls,
         *,
         model_type: str,
-        after: dt | None = None,
-        before: dt | None = None,
-        start_snapshot: None | SnapshotTimelineEntry = None,
-    ) -> Self | None:
+        after: dt | None,
+        before: dt | None,
+        start_snapshot: None | SnapshotTimelineEntry,
+        **kwargs: _SnapshotImplKwargs,
+    ) -> Self | None | Awaitable[Self | None]:
         pass
 
     @classmethod
+    def process_snapshot_model_type(cls, model_type: str | None) -> str:
+        """
+        For customizing the naming logic and processing, like escaping.
+
+        The result is used for comparations.
+
+        By default None and "" are handled equally but this logic is overwritable.
+        """
+        return model_type or cls.__name__
+
+    @overload
+    @classmethod
     def get_snapshot(
-        cls,
+        cls: type[_AsyncSnapshotImplType],
         model_type: str | None = None,
         *,
         after: dt | None = None,
         before: dt | None = None,
         start_snapshot: None | SnapshotTimelineEntry = None,
-        **kwargs,
-    ) -> Self | None:
+        **kwargs: _SnapshotImplKwargs,
+    ) -> Awaitable[_UnpackedSnapImplReturnType | None]: ...
+
+    @overload
+    @classmethod
+    def get_snapshot(
+        cls: type[_SyncSnapshotImplType],
+        model_type: str | None = None,
+        *,
+        after: dt | None = None,
+        before: dt | None = None,
+        start_snapshot: None | SnapshotTimelineEntry = None,
+        **kwargs: _SnapshotImplKwargs,
+    ) -> _UnpackedSnapImplReturnType | None: ...
+
+    @classmethod
+    def get_snapshot(
+        cls: type[_SyncSnapshotImplType | _AsyncSnapshotImplType],
+        model_type: str | None = None,
+        *,
+        after: dt | None = None,
+        before: dt | None = None,
+        start_snapshot: None | SnapshotTimelineEntry = None,
+        **kwargs: _SnapshotImplKwargs,
+    ) -> _UnpackedSnapImplReturnType | None | Awaitable[_UnpackedSnapImplReturnType | None]:
+        model_type = cast(BaseTMSnapshot, cls).process_snapshot_model_type(model_type)
         if start_snapshot is not None:
             snap_for, snap_type = extract_snapshot_data(start_snapshot)[1:]
-            assert snap_type in {
+            if snap_type not in {
                 SnapshotType.full,
                 SnapshotType.temporary,
-            }
+            }:
+                raise ValueError("Invalid `start_snapshot`. Not a `temporary` or `full` snapshot.")
             # the start snapshot ensures that after is set
             if after is None or after < snap_for:
                 after = snap_for
-            if mtype := getattr(start_snapshot, "model_type", None):
-                if not model_type:
-                    mtype = model_type
-                else:
-                    assert mtype == model_type
-                model_type = mtype
-        assert model_type is not None, "Couldn't determine the model_type. Please provide it."
+            if isinstance(start_snapshot, dict):
+                model_type_start = start_snapshot.get("model_type")
+            else:
+                model_type_start = getattr(start_snapshot, "model_type", None)
+            # if found compare against the model type of start_snapshot
+            if model_type_start:
+                assert model_type_start == model_type, "`start_snapshot` and `model_type` doesn't match."
         return cls.get_snapshot_impl(
             model_type=model_type, after=after, before=before, start_snapshot=start_snapshot, **kwargs
         )
