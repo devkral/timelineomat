@@ -1,4 +1,10 @@
-from .snapshots import BaseTMSnapshot, SnapshotType, SnapshotTypeVariant, TMField, extract_snapshot_data
+from .snapshots import (
+    BaseTMSnapshot,
+    SnapshotType,
+    SnapshotTypeVariant,
+    TMSnapshotTimeline,
+    extract_snapshot_data,
+)
 from .timeline import (
     NoCallAllowedError,
     PositionsOffsetsTuple,
@@ -24,6 +30,7 @@ __all__ = [
     "transform_events_to_times",
     "ordered_insert",
     "TimelineOMat",
+    "TMSnapshotTimeline",
     "SkipEvent",
     "SkipInvalidEvent",
     "SkipEmptyEvent",
@@ -32,7 +39,6 @@ __all__ = [
     "PositionsOffsetsTuple",
     "TimeRangeTuple",
     "BaseTMSnapshot",
-    "TMField",
     "SnapshotType",
     "SnapshotTypeVariant",
     "extract_snapshot_data",

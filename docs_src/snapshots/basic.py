@@ -20,6 +20,12 @@ class ExampleSnapshot(BaseTMSnapshot):
 
     snapshot_field = TMField()
 
+    def __post_init__(self, **kwargs):
+        # fix data
+        for k, v in self.__dict__.items():
+            if isinstance(field := type(self).__dict__.get(k), TMField) and v is not field:
+                self.data[k] = field.serializer(v)
+
     @classmethod
     def process_snapshot_content_specifier(cls, content_specifier: str | None):
         # optional, only required when content_specifiers need a processing
@@ -41,7 +47,7 @@ class ExampleSnapshot(BaseTMSnapshot):
         snapshot_type = SnapshotType.temporary
 
         for snap in database_query:
-            extracted, timepoint, snap_type = extract_snapshot_data(snap)
+            extracted, timepoint, snap_type = extract_snapshot_data(snap, fallback_tz=cls.snapshot_fallback_tz)
             if before is not None and timepoint >= before:
                 break
             if after is not None and timepoint < after:

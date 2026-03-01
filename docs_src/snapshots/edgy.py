@@ -1,4 +1,6 @@
+from dataclasses import dataclass, field
 from datetime import datetime as dt
+from typing import Any
 
 import edgy
 import pytest
@@ -13,14 +15,33 @@ pytestmark = pytest.mark.anyio
 class SnapshotImplementation(edgy.Model):
     data = edgy.fields.JSONField(default=dict)
     snapshot_for: dt = edgy.fields.DateTimeField()
-    snapshot_type = edgy.fields.CharField(max_length=10)
+    snapshot_type = edgy.fields.SmallIntegerField()
+    # if you want to validate that no temporary snapshot_type is materialized
+    # snapshot_type = edgy.fields.SmallIntegerField(gte=0, lt=2)
     content_specifier = edgy.fields.CharField(max_length=10)
 
     class Meta:
         registry = models
 
 
+# Note: not an edgy model
+@dataclass(kw_only=True)
 class Snapshot(BaseTMSnapshot):
+    snapshot_for: dt
+    data: dict[str, Any] = field(default_factory=dict, init=False)
+    # managed is extra
+    managed: set[str] = field(default_factory=set, init=False)
+    snapshot_type: SnapshotType
+
+    def __post_init__(self, **kwargs):
+        # fix data
+        for attr_name in list(self.__dict__):
+            attr_value = self.__dict__[attr_name]
+            if isinstance(field := type(self).__dict__.get(attr_name), TMField):
+                del self.__dict__[attr_name]
+                if attr_value is not field:
+                    self.data[attr_name] = field.serializer(attr_value)
+
     @classmethod
     async def get_snapshot_impl(cls, *, content_specifier, after=None, before=None, start_snapshot=None):
         snapshots = [start_snapshot] if start_snapshot is not None else []
@@ -36,7 +57,7 @@ class Snapshot(BaseTMSnapshot):
         if start_snapshot is not None:
             query = query.filter(snapshot_for__gt=start_snapshot)
         for snap in await query:
-            extracted, timepoint, snap_type = extract_snapshot_data(snap)
+            extracted, timepoint, snap_type = extract_snapshot_data(snap, fallback_tz=cls.snapshot_fallback_tz)
             if after is not None and timepoint < after:
                 if snap_type == SnapshotType.full:
                     current_snapshot_data = first_snapshot_data = extracted
@@ -77,10 +98,10 @@ class Snapshot(BaseTMSnapshot):
         return instance
 
     @classmethod
-    def get_snapshot(cls, **kwargs):
-        assert kwargs.pop("content_specifier") is None
+    def get_snapshots(cls, **kwargs):
+        assert kwargs.get("content_specifier") is None
         # content_specifier = cls.__name__
-        return super().get_snapshot(**kwargs)
+        return super().get_snapshots(**kwargs)
 
 
 class SnapshotSubtype1(Snapshot):
