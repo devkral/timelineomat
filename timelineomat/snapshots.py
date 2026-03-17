@@ -13,6 +13,7 @@ from typing import (
     ClassVar,
     Generic,
     Literal,
+    NoReturn,
     Protocol,
     Self,
     TypedDict,
@@ -139,27 +140,22 @@ class TMSnapshotTimeline(Generic[_SnapshotInstanceType]):
         return cls(klass, sn, content_specifier)
 
     def __getitem__(self, timestamp: dt | int | str | None, /) -> _SnapshotInstanceType | None:
+        if timestamp is None:
+            if self._snapshots:
+                return self._snapshots[-1]
+            return None
+        sanitized_timestamp: dt = parse_dt(timestamp, fallback_tz=self.klass.snapshot_fallback_tz)
         last_item: _SnapshotInstanceType | None = None
-        # fake, it will be always set to non-none wnen last_item is not None
-        last_item_sanitized_timestamp: dt = cast(dt, None)
-        sanitized_timestamp = (
-            parse_dt(timestamp, fallback_tz=self.klass.snapshot_fallback_tz) if timestamp is not None else None
-        )
         for item in self._snapshots:
             item_sanitized_timestamp = parse_dt(item.snapshot_for, fallback_tz=self.klass.snapshot_fallback_tz)
-            if (
-                last_item is not None
-                and sanitized_timestamp is not None
-                and last_item_sanitized_timestamp < sanitized_timestamp
-                and item_sanitized_timestamp < sanitized_timestamp
-            ):
+            if item_sanitized_timestamp > sanitized_timestamp:
+                # use last_item, current item is not applicable anymore
                 return last_item
             last_item = item
-            last_item_sanitized_timestamp = item_sanitized_timestamp
         return last_item
 
     def iterate(
-        self, *, step: td | None = None, stop: dt | None = None
+        self, *, step: td | None = None, before: dt | None = None, after: dt | None = None
     ) -> Generator[tuple[dt, _SnapshotInstanceType], None, None]:
         counter: dt = cast(dt, None)
         pos_item: int = 0
@@ -173,9 +169,10 @@ class TMSnapshotTimeline(Generic[_SnapshotInstanceType]):
             item = self._snapshots[pos_item]
             if counter is None:
                 counter = parse_dt(item.snapshot_for, fallback_tz=self.klass.snapshot_fallback_tz)
-            if stop is not None and counter > stop:
+            if before is not None and counter > before:
                 return
-            yield (counter, item)
+            if after is None or counter > after:
+                yield (counter, item)
             if step is not None:
                 counter += step
                 if pos_item < max_pos_snapshots:
@@ -196,6 +193,9 @@ class TMSnapshotTimeline(Generic[_SnapshotInstanceType]):
     def __len__(self):
         return len(self._snapshots)
 
+    def __bool__(self):
+        return bool(self._snapshots)
+
 
 _SnapshotImplReturnType = TypeVar("_SnapshotImplReturnType", covariant=True)
 _SnapshotImplKwargs = TypeVar("_SnapshotImplKwargs")
@@ -211,7 +211,8 @@ class _BaseSnapshotImplType(Protocol[_SnapshotImplReturnType]):
         after: dt | None,
         before: dt | None,
         start_snapshot: None | SnapshotTimelineEntry,
-    ) -> _SnapshotImplReturnType: ...
+    ) -> _SnapshotImplReturnType:
+        pass
 
 
 _SyncSnapshotImplType = _BaseSnapshotImplType[Sequence[_SnapshotInstanceType]]
@@ -220,19 +221,31 @@ _AsyncSnapshotImplType = _BaseSnapshotImplType[Awaitable[Sequence[_SnapshotInsta
 if TYPE_CHECKING:
 
     class _BaseTMSnapshot(_BaseSnapshotImplType, SnapshotObject, ABC):
-        pass
+        content_specifier: str
 
 else:
-    # otherwise we end with an inconsistent inheritance order e.g. with edgy
+    # otherwise we end with an inconsistent inheritance order e.g. with pydantic
 
-    class _BaseTMSnapshot(_BaseSnapshotImplType, ABC):  # noqa
-        pass
+    class _BaseTMSnapshot:
+        # don't use protocol nor predefine the attrs
+
+        @classmethod
+        def get_snapshots_impl(
+            cls,
+            *,
+            content_specifier: str,
+            after: dt | None,
+            before: dt | None,
+            start_snapshot: None | SnapshotTimelineEntry,
+        ) -> NoReturn:
+            # instead of abc or protocol and altering the metaclass, we just raise an error
+            # this approach works also with pydantic
+            raise NotImplementedError('Error: "get_snapshots_impl" must be implemented.')
 
 
 class BaseTMSnapshot(_BaseTMSnapshot):
     snapshot_fallback_tz: ClassVar[Any] = None
     snapshot_attrs_as_kwargs: ClassVar[bool] = False
-    content_specifier: str
 
     @classmethod
     def deserialize_snapshot(

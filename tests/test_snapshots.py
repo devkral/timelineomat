@@ -78,7 +78,7 @@ class DummySnapshot(BaseTMSnapshot):
                     first_snapshot_data.update(extracted)
                     first_snapshot_data["snapshot_for"] = timepoint
                 continue
-            if snap_type != SnapshotType.full and (not snapshots or first_snapshot_data is not None):
+            if snap_type != SnapshotType.full and not snapshots and first_snapshot_data is None:
                 raise ValueError("No full snapshot found")
             if not snapshots and first_snapshot_data is not None:
                 if snap_type != SnapshotType.full:

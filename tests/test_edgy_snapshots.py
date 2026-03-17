@@ -1,11 +1,13 @@
-from dataclasses import asdict, dataclass, field
+from collections.abc import MutableMapping
 from datetime import datetime as dt
-from typing import Any
+from datetime import timedelta as td
+from typing import Annotated, Any, Self
 
 import edgy
 import pytest
 from edgy import Registry
 from edgy.testing.client import DatabaseTestClient
+from pydantic import BaseModel, BeforeValidator, Field, PlainSerializer, computed_field
 
 from timelineomat import BaseTMSnapshot, SnapshotType, extract_snapshot_data
 
@@ -33,64 +35,80 @@ async def rollback_transactions():
 
 class SnapshotImplementation(edgy.Model):
     data = edgy.fields.JSONField(default=dict)
-    snapshot_for: dt = edgy.fields.DateTimeField()
+    snapshot_for: dt = edgy.fields.DateTimeField(primary_key=True)
+    content_specifier = edgy.fields.CharField(max_length=50, primary_key=True)
+    # only 0, 1
     snapshot_type = edgy.fields.SmallIntegerField(gte=0, lt=2)
-    content_specifier = edgy.fields.CharField(max_length=20)
 
     class Meta:
         registry = models
 
 
 # Note: not an edgy model
-@dataclass(kw_only=True)
-class Snapshot(BaseTMSnapshot):
+class Snapshot(BaseTMSnapshot, BaseModel):
+    data: MutableMapping[str, Any] = Field(init=False, default_factory=dict)
     snapshot_for: dt
-    data: dict[str, Any] = field(default_factory=dict, init=False)
-    # managed is extra
-    managed: set[str] = field(default_factory=set, init=False)
     snapshot_type: SnapshotType
-
-    def __post_init__(self, **kwargs):
-        # fix data
-        for attr_name in list(self.__dict__):
-            attr_value = self.__dict__[attr_name]
-            if isinstance(field := type(self).__dict__.get(attr_name), TMField):
-                del self.__dict__[attr_name]
-                if attr_value is not field:
-                    self.data[attr_name] = field.serializer(attr_value)
+    _loaded: bool = False
 
     @classmethod
-    async def get_snapshot_impl(cls, *, content_specifier, after=None, before=None, start_snapshot=None):
+    def deserialize_snapshot(
+        cls,
+        full_data: MutableMapping[str, Any],
+        *,
+        data: MutableMapping[str, Any],
+        snapshot_for: dt,
+        snapshot_type: SnapshotType,
+        content_specifier: str,
+    ) -> Self:
+        snapshot_obj = cls(**full_data)
+        snapshot_obj.data = data
+        snapshot_obj.snapshot_type = snapshot_type
+        snapshot_obj.snapshot_for = snapshot_for
+        # snapshot_obj.content_specifier = content_specifier
+        snapshot_obj._loaded = True
+        return snapshot_obj
+
+    @classmethod
+    async def get_snapshots_impl(cls, *, content_specifier, after=None, before=None, start_snapshot=None):
         snapshots = [start_snapshot] if start_snapshot is not None else []
         first_snapshot_data = None
-        current_snapshot_data = {}
-        snapshot_type = SnapshotType.temporary
         query = SnapshotImplementation.query.filter(content_specifier=content_specifier).order_by("snapshot_for")
+
         if before is not None:
             query = query.filter(snapshot_for__lt=before)
         if after is None:
             # start_snapshot is None
-            start_snapshot = await query.filter(snapshot_type="full").last()
-        if start_snapshot is not None:
-            query = query.filter(snapshot_for__gt=start_snapshot)
-        for snap in await query:
+            assert start_snapshot is None
+            starting_snapshot = await query.filter(snapshot_type=SnapshotType.full).last()
+            if starting_snapshot is not None:
+                snapshots.append(starting_snapshot)
+                after = extract_snapshot_data(starting_snapshot)[1]
+                query = query.filter(snapshot_for__gt=after)
+            snapshots_list = await query
+        elif start_snapshot is not None:
+            query = query.filter(snapshot_for__gt=after)
+            snapshots_list = await query
+        else:
+            starting_snapshot = await query.filter(snapshot_type=SnapshotType.full, snapshot_for__lt=after).last()
+            if starting_snapshot is not None:
+                query = query.filter(snapshot_for__gt=starting_snapshot.snapshot_for)
+                snapshots_list = [starting_snapshot, *(await query)]
+            else:
+                snapshots_list = await query
+            # otherwise just load everything and filter manually
+        for snap in snapshots_list:
             extracted, timepoint, snap_type = extract_snapshot_data(snap, fallback_tz=cls.snapshot_fallback_tz)
             if after is not None and timepoint < after:
                 if snap_type == SnapshotType.full:
-                    current_snapshot_data = first_snapshot_data = extracted
-                    first_snapshot_data["snapshot_for"] = current_snapshot_data["snapshot_for"] = timepoint
+                    first_snapshot_data = extracted
+                    first_snapshot_data["snapshot_for"] = timepoint
                 elif first_snapshot_data is not None:
-                    current_snapshot_data.update(extracted)
                     first_snapshot_data.update(extracted)
-                    first_snapshot_data["snapshot_for"] = current_snapshot_data["snapshot_for"] = timepoint
+                    first_snapshot_data["snapshot_for"] = timepoint
                 continue
-            if snap_type != SnapshotType.full and (not snapshots or first_snapshot_data is not None):
+            if snap_type != SnapshotType.full and not snapshots and first_snapshot_data is None:
                 raise ValueError("No full snapshot found")
-            if snap_type == SnapshotType.full:
-                current_snapshot_data.clear()
-            current_snapshot_data.update(extracted)
-            current_snapshot_data["snapshot_for"] = timepoint
-            snapshot_type = snap_type
             if not snapshots and first_snapshot_data is not None:
                 if snap_type != SnapshotType.full:
                     first_snapshot_data["snapshot_type"] = SnapshotType.temporary
@@ -98,22 +116,11 @@ class Snapshot(BaseTMSnapshot):
                     snapshots.append(first_snapshot_data)
 
                 first_snapshot_data = None
-            # start from the last full snapshot
-            if snap_type == SnapshotType.full and before is None and after is None:
-                snapshots.clear()
-                first_snapshot_data = None
             snapshots.append(snap)
         if first_snapshot_data is not None:
+            first_snapshot_data["snapshot_type"] = SnapshotType.temporary
             snapshots.insert(0, first_snapshot_data)
-        if not snapshots:
-            return None
-        instance = cls(
-            snapshot_type=snapshot_type,
-            **current_snapshot_data,
-        )
-        instance._snapshots = snapshots
-
-        return instance
+        return snapshots
 
     @classmethod
     def get_snapshots(cls, **kwargs):
@@ -122,23 +129,86 @@ class Snapshot(BaseTMSnapshot):
         return super().get_snapshots(**kwargs)
 
     async def save(self):
-        data, snapshot_for, snap_type = extract_snapshot_data(self, fallback_tz=self.snapshot_fallback_tz)
-
-        return await SnapshotImplementation(
+        snapshot_for, snap_type = extract_snapshot_data(self, fallback_tz=self.snapshot_fallback_tz)[1:]
+        if snap_type == SnapshotType.temporary:
+            raise ValueError("Cannot save a temporary Snapshot.")
+        if self._loaded and not self.object_not_updated:
+            return
+        data = self.model_dump(include=self.updated_attrs if self._loaded else None, exclude_none=True)
+        impl = await SnapshotImplementation(
             data=data, snapshot_for=snapshot_for, snapshot_type=snap_type, content_specifier=type(self).__name__
         ).save()
+        self.data = data
+        self.__dict__.pop("updated_attrs", None)
+        self._loaded = True
+        return impl
 
 
-@dataclass(kw_only=True)
+def stringify(x):
+    return str(x)
+
+
 class SnapshotSubtype1(Snapshot):
-    stringified: str = TMField(serializer=str)  # type: ignore
-    stringified_int: int = TMField(serializer=str, deserializer=int)  # type: ignore
+    stringified: Annotated[str | None, BeforeValidator(stringify)] = None
+    stringified_int: Annotated[int | None, PlainSerializer(stringify)] = None
+
+    @computed_field
+    def content_specifier(self) -> str:
+        return type(self).__name__
+
+    @classmethod
+    def deserialize_snapshot(
+        cls,
+        full_data: MutableMapping[str, Any],
+        *,
+        data: MutableMapping[str, Any],
+        snapshot_for: dt,
+        snapshot_type: SnapshotType,
+        content_specifier: str,
+    ) -> Self:
+        if full_data.get("stringified_int") is not None:
+            full_data["stringified_int"] = int(full_data["stringified_int"])
+        if full_data.get("stringified") is not None:
+            full_data["stringified"] = str(full_data["stringified"])
+        return super().deserialize_snapshot(
+            full_data,
+            data=data,
+            snapshot_for=snapshot_for,
+            snapshot_type=snapshot_type,
+            content_specifier=content_specifier,
+        )
 
 
-@dataclass(kw_only=True)
-class SnapshotSubtype2(Snapshot):
-    stringified2: str = TMField(serializer=str)  # type: ignore
-    stringified_int2: int = TMField(serializer=str, deserializer=int)  # type: ignore
+class SnapshotForIdObjects(Snapshot):
+    id: int
+    stringified2: Annotated[str | None, BeforeValidator(stringify)] = None
+    stringified_int2: Annotated[int | None, PlainSerializer(stringify)] = None
+
+    @computed_field
+    def content_specifier(self) -> str:
+        return f"{type(self).__name__}:{self.id}"
+
+    @classmethod
+    def deserialize_snapshot(
+        cls,
+        full_data: MutableMapping[str, Any],
+        *,
+        data: MutableMapping[str, Any],
+        snapshot_for: dt,
+        snapshot_type: SnapshotType,
+        content_specifier: str,
+    ) -> Self:
+        if full_data.get("stringified_int2") is not None:
+            full_data["stringified_int2"] = int(full_data["stringified_int2"])
+        if full_data.get("stringified2") is not None:
+            full_data["stringified2"] = str(full_data["stringified2"])
+        return super().deserialize_snapshot(
+            full_data,
+            data=data,
+            snapshot_for=snapshot_for,
+            snapshot_type=snapshot_type,
+            content_specifier=content_specifier,
+        )
 
 
 async def test_violations():
@@ -167,7 +237,7 @@ sample_snapshots_sub1 = [
         "stringified_int": 7,
     },
     {
-        "snapshot_for": dt(year=2025, month=1, day=2),
+        "snapshot_for": dt(year=2025, month=1, day=2, hour=2),
         "snapshot_type": SnapshotType.sparse,
         "stringified_int": 8,
     },
@@ -182,33 +252,44 @@ sample_snapshots_sub1 = [
         "stringified": 111,
         "stringified_int": 10,
     },
+    {
+        "snapshot_for": dt(year=2025, month=1, day=5),
+        "snapshot_type": SnapshotType.sparse,
+        "stringified": 11,
+    },
 ]
 
 
 async def test_basic():
     for i in sample_snapshots_sub1:
-        impl = await SnapshotSubtype1(**i).save()
+        impl = await SnapshotSubtype1.model_validate(i, strict=False).save()
         assert impl.data
-    assert await SnapshotSubtype2.get_snapshots() is None
+    tl = await SnapshotForIdObjects.get_snapshots()
+    assert len(tl) == 0
     real = await SnapshotSubtype1.get_snapshots()
-    assert real is not None
-    assert real.snapshot_type == SnapshotType.full
-    assert real.snapshot_for == dt(year=2025, month=1, day=4)
-    assert len(real._snapshots) == 1
+    assert len(real) == 2
+    assert real[dt(year=2025, month=1, day=4)].snapshot_type == SnapshotType.full
+    last_snap = real[dt(year=2025, month=1, day=5)]
+    assert last_snap.snapshot_type == SnapshotType.sparse
+    assert last_snap.snapshot_for == dt(year=2025, month=1, day=5)
+    assert last_snap.stringified == "11"
+    assert last_snap.stringified_int == 10
+    after_last_snap = real[dt(year=2025, month=1, day=8)]
+    assert after_last_snap.snapshot_type == SnapshotType.sparse
+    assert after_last_snap.snapshot_for == dt(year=2025, month=1, day=5)
+    assert after_last_snap.stringified == "11"
+    assert after_last_snap.stringified_int == 10
 
     combined = await SnapshotSubtype1.get_snapshots(before=dt(year=2025, month=1, day=4))
-    assert combined is not None
-    assert combined.snapshot_type == SnapshotType.sparse
-    assert combined.snapshot_for == dt(year=2025, month=1, day=3)
-    assert len(combined._snapshots) == 3
+    assert len(combined) == 3
+    assert combined[dt(year=2025, month=1, day=3)] == combined[None]
+    assert combined[dt(year=2025, month=1, day=3)].snapshot_type == SnapshotType.sparse
+    assert combined[dt(year=2025, month=1, day=3)].stringified == "9"
 
 
-async def test_set_date():
+async def test_get_all():
     for i in sample_snapshots_sub1:
-        await SnapshotSubtype1(**i).save()
+        await SnapshotSubtype1.model_validate(i, strict=False).save()
 
-    combined = await SnapshotSubtype1.get_snapshots(before=dt(year=2025, month=1, day=4))
-    assert combined is not None
-    assert combined.stringified == "9"
-    combined.snapshot_for = dt(year=2025, month=1, day=2)
-    assert combined.stringified == "1"
+    tl = await SnapshotSubtype1.get_snapshots(after=dt.min)
+    assert len(tl) == len(sample_snapshots_sub1)

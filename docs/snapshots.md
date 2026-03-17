@@ -4,13 +4,12 @@ Sometimes a configuration iterates over time and if you go back in time you have
 Example 1: A workplan. The shifts can change and sometimes the worktimes are higher or lower, so you need the settings at the timepoint.
 Example 2: A contract with adjustments.
 
-This toolkit allows to easily build a snapshot model
+This toolkit allows to easily build a snapshot model which can be used to track changes in e.g. contracts or to document configuration changes.
 
 ## Overview
 
 - `BaseTMSnapshot`: Abstract class to implement.
 - `SnapshotType`/`SnapshotTypeVariant`: Snapshot types: full, sparse and temporary.
-- `TMField`: Actual field which is used in snapshots.
 - `extract_snapshot_data(obj, *, fallback_tz=None)`: Extract snapshot data from snapshot object or dict. Returns a tuple (data, timepoint, snapshot type).
 
 ### Types
@@ -26,8 +25,8 @@ So you have plenty of choices how to save it in the storage model.
 
 ## How to implement
 
-1. Create a container where the snapshot data is serialized
-2. Create an interface where the attributes are defined
+1. Create a container class where the snapshot data is serialized.
+2. Create an interface where the attributes are defined.
 
 Sometimes both can be implemented in the same class. But if you use databases you certainly want to implement it in the split model
 so you can have a multiplexing snapshot implementation table.
@@ -61,30 +60,121 @@ The return type is always a member of `SnapshotType`.
 
 ## `BaseTMSnapshot`
 
-The snapshot logic object. By default setter and getters are replaced with forwards to `data`.
-Fields which are handled by the snapshot (e.g. settings) are defined with `TMField`s.
+The snapshot logic object. By default a setter is injected so we can log which attributes were changed.
+It has following methods:
 
-It has a magic attribute named `snapshot_for`. When setting it, the data is recalculated to the valid snapshot to this timepoint. All sparse
-snapshots found until then are applied.
-And only explicit set fields are kept (tracked by `managed`).
+- `get_snapshots_impl`: this method must be implemented. It can either return an awaitable or the result. It can take extra keyword arguments passed to `get_snapshots`: The returned type is a Iterable of to `extract_snapshot_data` compatible objects. They are transformed to a `TMSnapshotTimeline` in `get_snaphots`.
+- `get_snapshots` returns a `TMSnapshotTimeline` made from the returnal of `get_snapshots_impl`. You can pass extra keyword arguments to `get_snapshots_impl`.
+  You might only want to modify this method, if you want a different `TMSnapshotTimeline`.
+- `deserialize_snapshot`: To modify the loading of snapshots.
+- ```
+@classmethod
+def process_snapshot_content_specifier(cls, content_specifier: str | None) -> str:```: This allows modifying the automatic creation of content_specifier.
+  By default only the class name is used if no content_specifier was provided. But you can extend with other keys like the id of the object to which a snapshot is created.
 
-If you want a different logic you can define the Subclass with `wrap_tm_accessors=False`:
+Update related methods and properties
+- `object_not_updated`: property which returns if attributes were set on the logic object which were not ignored.
+- `is_attr_change_update(self, name: str, value: Any) -> bool`: When returning `False` ignore writes to attributes or their deletion and don't log them in `updated_attrs`. For non-snapshot related attributes.
+- `updated_attrs` cached property, which tracks the changes. Should be accessed **after** verifying with `object_not_updated` that changes happened. Otherwise
+  `object_not_updated` returns a wrong value.
+  To reset use the idiom: `snapshot.__dict__.pop("updated_attrs", None)`.
+
+### `get_snapshots`
+
+This method returns a slice of all snapshots in form of a `TMSnapshotTimeline`. You can either
+access the valid Snapshot to a specific date or iterate through the snapshots.
+See (#tmsnapshottimeline)[`TMSnapshotTimeline`] for more information.
+
+**Example**
+
+**Tricks**
+- Use `after=datetime.min` to get all snapshots.
+- Don't provide any argument, to get the snapshots beginning with the last full Snapshot.
+
+### Saving
+
+By default `BaseTMSnapshot` makes no assumption about saving and how a save method has to look like.
+In fact, it isn't even required as the changelog can be created outside of the domain Snapshot object.
+
+However `BaseTMSnapshot` provides some methods and properties related to attribute updates, so this can be easily implemented
+in the Snapshot domain object.
+
+**Example**
+
+```python
+from pydantic import BaseModel, Field
+
+class Snapshot(BaseTMSnapshot, BaseModel):
+    data: MutableMapping[str, Any] = Field(init=False, default_factory=dict)
+    snapshot_for: dt
+    snapshot_type: SnapshotType
+
+    @classmethod
+    def get_snapshots(cls, **kwargs):
+        assert kwargs.get("content_specifier") is None
+        return super().get_snapshots(**kwargs)
+
+    async def save(self):
+        snapshot_for, snap_type = extract_snapshot_data(self, fallback_tz=self.snapshot_fallback_tz)[1:]
+        if snap_type == SnapshotType.temporary:
+            raise ValueError("Cannot save a temporary Snapshot.")
+        if self._loaded and not self.object_not_updated:
+            return
+        data = self.model_dump(include=self.updated_attrs if self._loaded else None, exclude_none=True)
+        impl = await SnapshotImplementation(
+            data=data, snapshot_for=snapshot_for, snapshot_type=snap_type, content_specifier=type(self).__name__
+        ).save()
+        self.data = data
+        self.__dict__.pop("updated_attrs", None)
+        return impl
+```
+
+## `TMSnapshotTimeline`
+
+`TMSnapshotTimeline` can be accessed like a dictionary. It will return the most fitting snapshot or None.
+The amount of snapshots and if any snapshot is in it can be retrieved via `len(timeline)` or `bool(timeline)`.
+For efficiency it has also an `iterate` method. You can either pass a timedelta to specify a stepwidth or None to jump through the snapshots (default).
+It yields (timepoint, snapshot) pairs until it is exhausted.
+
+**Example for iterate**
 
 ``` python
-class Snapshot(BaseTMSnapshot, wrap_tm_accessors=False):
+from datetime import datetime, timedelta
+...
+# get all snapshots
+all_snapshots = SnapshotModel.get_snapshots(after=datetime.min)
+
+# 1. way, iterate through snapshots
+for timepoint, snapshot in all_snapshots.iterate():
+    ...
+# or shorter
+for timepoint, snapshot in all_snapshots:
+    ...
+
+# 2. way, iterate with step size
+for timepoint, snapshot in all_snapshots.iterate(step=timedelta(day=1)):
     ...
 ```
 
+You can also specify a `before` or `after` argument:
 
-## `TMField`
+``` python
+from datetime import datetime, timedelta
+...
+# this retrieves the snapshots with start the last full snapshot
+snapshot_timeline = SnapshotModel.get_snapshots()
 
-`TMField` is a specialized field for timelineomat. It takes `name` for changing the name in data.
-In case `name` is empty or None, the attribute name is used.
-If the used name is not in `data`, the `default_handler` is used. It takes two arguments: Snapshot instance and the used name.
-By default an attribute error is thrown.
-With `serializer` and `deserializer` the serializing to the data object and the deserializing from the data object can be overwritten.
+# 1. way, iterate through snapshots
+for timepoint, snapshot in all_snapshots.iterate(after=datetime(2024, 1, 1), before=datetime(2024, 2, 1)):
+    ...
 
-## Integrate with Timeline
+# 2. way, iterate with step size
+for timepoint, snapshot in all_snapshots.iterate(step=timedelta(day=1), after=datetime(2024, 1, 1), before=datetime(2024, 2, 1)):
+    ...
+```
+This helps sifting through a timeline slice retrieved by `get_snapshots`. Note however, non-retrieved snapshots doesn't appear in the timeline.
+
+## Integrate with Timeline (other timelineomat feature)
 
 Imagine every snapshot being part of a timeline. Here we have only one timestamp which starts a
 new era but consider every era being defined between two timestamps (start, stop) except the first and last one.
