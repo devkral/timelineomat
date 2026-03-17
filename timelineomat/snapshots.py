@@ -167,9 +167,10 @@ class TMSnapshotTimeline(Generic[_SnapshotInstanceType]):
         max_pos_snapshots: int = len_snapshots - 1
         while True:
             item = self._snapshots[pos_item]
-            if counter is None:
+            if counter is None or step is None:
+                # step is None, implies counter is of snapshot
                 counter = parse_dt(item.snapshot_for, fallback_tz=self.klass.snapshot_fallback_tz)
-            if before is not None and counter > before:
+            if before is not None and counter >= before:
                 return
             if after is None or counter > after:
                 yield (counter, item)

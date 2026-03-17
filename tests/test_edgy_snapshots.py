@@ -293,3 +293,5 @@ async def test_get_all():
 
     tl = await SnapshotSubtype1.get_snapshots(after=dt.min)
     assert len(tl) == len(sample_snapshots_sub1)
+    assert len(list(tl.iterate(before=dt(year=2025, month=1, day=4)))) == 3
+    assert len(list(tl.iterate(after=dt(year=2025, month=1, day=4)))) == 1
