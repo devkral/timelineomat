@@ -8,6 +8,7 @@ from pydantic import BaseModel, Field, computed_field
 
 from timelineomat import BaseTMSnapshot, SnapshotType, extract_snapshot_data
 
+DB_URL = ...
 models = edgy.Registry(database=DB_URL)
 
 pytestmark = pytest.mark.anyio

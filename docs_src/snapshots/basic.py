@@ -2,10 +2,9 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 from datetime import datetime as dt
-from typing import Any, Self, cast
+from typing import Any
 
 from timelineomat import BaseTMSnapshot, SnapshotType, TMField, extract_snapshot_data
-from timelineomat.snapshots import SnapshotTimelineEntry
 
 database_query: Any = []
 

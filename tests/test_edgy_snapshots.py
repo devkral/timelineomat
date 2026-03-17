@@ -295,3 +295,16 @@ async def test_get_all():
     assert len(tl) == len(sample_snapshots_sub1)
     assert len(list(tl.iterate(before=dt(year=2025, month=1, day=4)))) == 3
     assert len(list(tl.iterate(after=dt(year=2025, month=1, day=4)))) == 1
+
+
+async def test_iterate_step():
+    for i in sample_snapshots_sub1:
+        await SnapshotSubtype1.model_validate(i, strict=False).save()
+
+    tl = await SnapshotSubtype1.get_snapshots()
+    assert (
+        len(
+            list(tl.iterate(after=dt(year=2025, month=1, day=4), before=dt(year=2025, month=1, day=7), step=td(days=1)))
+        )
+        == 2
+    )
