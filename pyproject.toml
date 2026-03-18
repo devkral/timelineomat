@@ -1,11 +1,11 @@
 [project]
 name = "timelineomat"
-version = "0.7.0"
+dynamic = ['version']
 description = "Squeeze events into timelines and other timeline manipulations"
 authors = [{name = "Alexander Kaftan", email="devkral@web.de"}]
 license = "MIT"
 readme = "README.md"
-requires-python = ">=3.9"
+requires-python = ">=3.11"
 keywords = [
     "event",
     "time",
@@ -26,7 +26,8 @@ classifiers = [
     "License :: OSI Approved :: MIT License",
 ]
 
-
+[tool.hatch.version]
+path = "timelineomat/__init__.py"
 
 [build-system]
 requires = ["hatchling"]
@@ -34,7 +35,6 @@ build-backend = "hatchling.build"
 
 [tool.ruff]
 line-length = 120
-target-version = "py39"
 
 [tool.ruff.lint]
 select = [
@@ -56,10 +56,14 @@ ignore= ["FA100"]
 
 [tool.hatch.envs.default]
 installer = "uv"
+extra-dependencies = ["faker", "edgy", "mypy"]
 
 [tool.hatch.envs.hatch-test]
-dependencies = ["faker", "pytest"]
+extra-dependencies = ["faker", "edgy[sqlite,test]", "pytest-anyio"]
 installer = "uv"
 
 [tool.hatch.envs.hatch-static-analysis]
 installer = "uv"
+# disables custom ruff rules, required to align with pre-commit
+config-path = "none"
+dependencies = ["ruff==0.14.2"]
