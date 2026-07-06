@@ -58,6 +58,10 @@ ignore= ["FA100"]
 installer = "uv"
 extra-dependencies = ["faker", "edgy", "mypy"]
 
+[tool.hatch.envs.default.scripts]
+check_types = "mypy -p timelineomat {args}"
+
+
 [tool.hatch.envs.hatch-test]
 extra-dependencies = ["faker", "edgy[sqlite,test]", "pytest-anyio"]
 installer = "uv"
