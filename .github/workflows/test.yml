@@ -24,9 +24,7 @@ jobs:
       - name: Install dependencies
         run: |
           python -m pip install --upgrade pip uv hatch
-      - name: "Run linting"
-        run: "hatch fmt"
-      - name: "Run type check"
-        run: "hatch check_types"
+      - name: "Run linting and type check"
+        run: "hatch check"
       - name: "Run tests"
         run: "hatch test"
