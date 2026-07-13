@@ -34,6 +34,7 @@ But proof me wrong.
 
 ## Changes
 
+1.0.1 Fix typings.
 1.0.0 Breaking Change: `ordered_insert` returns now a PositionsOffsets-Tuple instead of a tuple with just one element. Add also snapshots to the library.
       Breaking Change: Requires python >= 3.11.
 0.7.0 Breaking Change: transform_events_to_times is now an iterator and returns the event as second element

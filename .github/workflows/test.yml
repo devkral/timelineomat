@@ -15,7 +15,6 @@ jobs:
       matrix:
         python-version: ["3.11", "3.12", "3.13", "3.14"]
 
-
     steps:
       - uses: actions/checkout@v6
       - uses: actions/setup-python@v6
@@ -25,7 +24,7 @@ jobs:
       - name: Install dependencies
         run: |
           python -m pip install --upgrade pip uv hatch
-      - name: "Run linting"
-        run: "hatch fmt"
+      - name: "Run linting and type check"
+        run: "hatch check"
       - name: "Run tests"
         run: "hatch test"

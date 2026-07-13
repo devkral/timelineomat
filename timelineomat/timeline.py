@@ -16,7 +16,7 @@ from datetime import datetime as dt
 from datetime import timezone as tz
 from functools import lru_cache
 from itertools import chain, tee
-from typing import Literal, NamedTuple, NewType, TypedDict, TypeVar, Unpack, cast
+from typing import Literal, NamedTuple, NewType, NotRequired, TypedDict, TypeVar, Unpack, cast
 
 
 class TimeRangeTuple(NamedTuple):
@@ -124,7 +124,7 @@ def handle_result(result: ExtractionResult, fallback_timezone: tz | None = None)
         return result
     elif isinstance(result, int | float):
         return dt.fromtimestamp(result, fallback_timezone)
-    elif isinstance(result, str):  # type: ignore
+    elif isinstance(result, str):
         return handle_result(dt.fromisoformat(result), fallback_timezone=fallback_timezone)
     else:
         raise TypeError(f"not supported type: {type(result)}")
@@ -221,17 +221,17 @@ def _streamline_event_times(
     return TimeRangeTuple(start=start, stop=stop), orig_tuple
 
 
-class _streamline_event_base_kwargs(TypedDict, total=False):
-    filter_fn: FilterFunction | None
-    fallback_timezone: tz | None
+class _streamline_event_base_kwargs(TypedDict):
+    filter_fn: NotRequired[FilterFunction | None]
+    fallback_timezone: NotRequired[tz | None]
 
 
 class _streamline_event_times_kwargs(_streamline_event_base_kwargs):
-    occlusions: list[TimeRangeTuple] | None
-    start_extractor: Extractor
-    stop_extractor: Extractor
-    ensure_timespan: bool
-    cut_handler: CutHandler
+    occlusions: NotRequired[list[TimeRangeTuple] | None]
+    start_extractor: NotRequired[Extractor]
+    stop_extractor: NotRequired[Extractor]
+    ensure_timespan: NotRequired[bool]
+    cut_handler: NotRequired[CutHandler]
 
 
 def streamline_event_times(
@@ -268,13 +268,13 @@ def streamline_event_times(
 
 
 class _streamline_event_kwargs(_streamline_event_base_kwargs):
-    start_extractor: Extractor
-    stop_extractor: Extractor
-    start_setter: Setter | None
-    stop_setter: Setter | None
-    occlusions: list[TimeRangeTuple] | None
-    ensure_timespan: bool
-    cut_handler: CutHandler
+    start_extractor: NotRequired[Extractor]
+    stop_extractor: NotRequired[Extractor]
+    start_setter: NotRequired[Setter | None]
+    stop_setter: NotRequired[Setter | None]
+    occlusions: NotRequired[list[TimeRangeTuple] | None]
+    ensure_timespan: NotRequired[bool]
+    cut_handler: NotRequired[CutHandler]
 
 
 def streamline_event(
@@ -317,8 +317,8 @@ def streamline_event(
 
 
 class _transform_events_to_times_kwargs(_streamline_event_base_kwargs):
-    start_extractor: Extractor
-    stop_extractor: Extractor
+    start_extractor: NotRequired[Extractor]
+    stop_extractor: NotRequired[Extractor]
 
 
 def transform_events_to_times(
@@ -394,7 +394,7 @@ def _ordered_insert(
         else:
             if (ev_times[1], ev_times[0]) < (event_times[1], ev_times[0]):
                 if not no_insert:
-                    timeline.insert(cast(int, last_pos), event)
+                    timeline.insert(last_pos, event)
                 return no_insert, cast(Position, last_pos)
         last_pos = position
     if direction == "asc":
@@ -407,14 +407,14 @@ def _ordered_insert(
         return no_insert, cast(Position, 0)
 
 
-class _ordered_insert_kwargs(TypedDict, total=False):
-    offsets: Sequence[Offset | None | Literal[0]] | None
-    no_update_timelines: set[int] | None
-    start_extractor: Extractor
-    stop_extractor: Extractor
-    fallback_timezone: tz | None
-    direction: Literal["asc", "desc"]
-    ensure_timespan: bool
+class _ordered_insert_kwargs(TypedDict):
+    offsets: NotRequired[Sequence[Offset | None | Literal[0]] | None]
+    no_update_timelines: NotRequired[set[int] | None]
+    start_extractor: NotRequired[Extractor]
+    stop_extractor: NotRequired[Extractor]
+    fallback_timezone: NotRequired[tz | None]
+    direction: NotRequired[Literal["asc", "desc"]]
+    ensure_timespan: NotRequired[bool]
 
 
 def ordered_insert(
@@ -454,7 +454,7 @@ def ordered_insert(
             start_extractor=start_extractor,
             stop_extractor=stop_extractor,
         )
-        return_positions.append(cast(Position, position))
+        return_positions.append(position)
         if direction == "desc":
             return_offsets.append(cast(Offset, len(timeline) - position - (0 if no_insert else 1)))
         else:
@@ -463,10 +463,10 @@ def ordered_insert(
 
 
 class _streamline_ordered_insert_kwargs(_streamline_event_kwargs):
-    offsets: Sequence[Offset | None | Literal[0]] | None
-    no_update_timelines: set[int] | None
-    direction: Literal["asc", "desc"]
-    cut_direction: Literal["asc", "desc", "occlusion"] | None
+    offsets: NotRequired[Sequence[Offset | None | Literal[0]] | None]
+    no_update_timelines: NotRequired[set[int] | None]
+    direction: NotRequired[Literal["asc", "desc"]]
+    cut_direction: NotRequired[Literal["asc", "desc", "occlusion"] | None]
 
 
 def streamlined_ordered_insert(

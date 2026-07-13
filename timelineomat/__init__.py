@@ -21,7 +21,7 @@ from .timeline import (
     transform_events_to_times,
 )
 
-__version__ = "1.0.0"
+__version__ = "1.0.1"
 
 __all__ = [
     "streamline_event_times",

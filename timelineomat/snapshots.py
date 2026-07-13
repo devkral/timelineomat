@@ -14,7 +14,9 @@ from typing import (
     Generic,
     Literal,
     NoReturn,
+    NotRequired,
     Protocol,
+    Required,
     Self,
     TypedDict,
     TypeVar,
@@ -39,12 +41,9 @@ class SnapshotObject(Protocol):
 
 
 class SnapshotDict(TypedDict):
-    data: MutableMapping[str, Any] | dict[str, Any]
-    snapshot_for: dt | int | str
-    snapshot_type: SnapshotType
-
-
-SnapshotDict.__required_keys__ = frozenset(("snapshot_for", "snapshot_type"))
+    data: NotRequired[MutableMapping[str, Any] | dict[str, Any]]
+    snapshot_for: Required[dt | int | str]
+    snapshot_type: Required[SnapshotType]
 
 
 SnapshotTimelineEntry = SnapshotObject | SnapshotDict
